@@ -1,0 +1,162 @@
+@page "/compras/nueva"
+@inject HttpClient Http
+@inject NavigationManager Nav
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h3 class="m-0">Nueva compra</h3>
+    <a class="btn btn-outline-secondary" href="compras">&larr; Volver a Compras</a>
+</div>
+
+@if (!string.IsNullOrEmpty(error)) { <div class="alert alert-danger py-2">@error</div> }
+
+@* ---------- MAESTRO ---------- *@
+<div class="card mb-3">
+    <div class="card-header">Datos de la compra</div>
+    <div class="card-body">
+        <label class="form-label">Proveedor</label>
+        <div class="input-group">
+            <select class="form-select" @bind="idProveedor">
+                <option value="0">-- Seleccione un proveedor --</option>
+                @foreach (var p in proveedores) { <option value="@p.IdProveedor">@p.Nombre (@p.Nit)</option> }
+            </select>
+            <a class="btn btn-outline-primary" href="proveedores">Administrar proveedores</a>
+        </div>
+    </div>
+</div>
+
+@* ---------- DETALLE ---------- *@
+<div class="card mb-3">
+    <div class="card-header">Agregar producto</div>
+    <div class="card-body">
+        <div class="row g-2 align-items-end">
+            <div class="col-md-5">
+                <label class="form-label">Producto</label>
+                <select class="form-select" value="@idProducto" @onchange="AlCambiarProducto">
+                    <option value="0">-- Seleccione un producto --</option>
+                    @foreach (var p in productos) { <option value="@p.IdProducto">@p.Descripcion (existencia: @p.Existencia)</option> }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Cantidad</label>
+                <input type="number" min="1" class="form-control" @bind="cantidad" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Precio costo (Q)</label>
+                <input type="number" min="0.01" step="0.01" class="form-control" @bind="precio" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Precio venta (+25%)</label>
+                <input class="form-control" readonly value="Q @PrecioVentaVista.ToString("N2")" />
+            </div>
+            <div class="col-md-1 d-grid">
+                <button class="btn btn-success" @onclick="Agregar">Agregar</button>
+            </div>
+        </div>
+        @if (!string.IsNullOrEmpty(errorLinea)) { <div class="text-danger mt-2">@errorLinea</div> }
+    </div>
+</div>
+
+<table class="table table-striped align-middle">
+    <thead class="table-dark">
+        <tr><th>Producto</th><th class="text-end">Cantidad</th><th class="text-end">Precio costo</th>
+            <th class="text-end">Precio venta</th><th class="text-end">Subtotal</th><th></th></tr>
+    </thead>
+    <tbody>
+    @if (lineas.Count == 0)
+    {
+        <tr><td colspan="6" class="text-muted text-center">Aún no se han agregado productos.</td></tr>
+    }
+    @foreach (var l in lineas)
+    {
+        <tr>
+            <td>@l.Descripcion</td>
+            <td class="text-end">@l.Cantidad</td>
+            <td class="text-end">Q @l.PrecioCosto.ToString("N2")</td>
+            <td class="text-end">Q @CalcularVenta(l.PrecioCosto).ToString("N2")</td>
+            <td class="text-end">Q @((l.Cantidad * l.PrecioCosto).ToString("N2"))</td>
+            <td class="text-end"><button class="btn btn-sm btn-outline-danger" @onclick="() => lineas.Remove(l)">Quitar</button></td>
+        </tr>
+    }
+    </tbody>
+    <tfoot>
+        <tr><th colspan="4" class="text-end">Total</th><th class="text-end">Q @Total.ToString("N2")</th><th></th></tr>
+    </tfoot>
+</table>
+
+<div class="d-flex gap-2">
+    <button class="btn btn-primary" @onclick="Guardar" disabled="@guardando">@(guardando ? "Guardando..." : "Registrar compra")</button>
+    <a class="btn btn-secondary" href="compras">Cancelar</a>
+</div>
+
+@code {
+    class Linea { public int IdProducto; public string Descripcion = ""; public int Cantidad; public decimal PrecioCosto; }
+
+    List<Proveedor> proveedores = new();
+    List<Producto> productos = new();
+    List<Linea> lineas = new();
+    int idProveedor, idProducto, cantidad = 1;
+    decimal precio;
+    string? error, errorLinea;
+    bool guardando;
+
+    decimal Total => lineas.Sum(l => l.Cantidad * l.PrecioCosto);
+    decimal PrecioVentaVista => CalcularVenta(precio);
+    static decimal CalcularVenta(decimal costo) => Math.Round(costo * 1.25m, 2, MidpointRounding.AwayFromZero);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            proveedores = await Http.GetFromJsonAsync<List<Proveedor>>("api/proveedores") ?? new();
+            productos = await Http.GetFromJsonAsync<List<Producto>>("api/productos") ?? new();
+        }
+        catch (HttpRequestException) { error = "No se pudieron cargar proveedores/productos (¿sesión iniciada?)."; }
+    }
+
+    void AlCambiarProducto(ChangeEventArgs e)
+    {
+        idProducto = int.TryParse(e.Value?.ToString(), out var id) ? id : 0;
+        var p = productos.FirstOrDefault(x => x.IdProducto == idProducto);
+        if (p is not null) precio = p.PrecioCosto; // sugerencia, editable
+    }
+
+    void Agregar()
+    {
+        errorLinea = null;
+        if (idProducto == 0) { errorLinea = "Seleccione un producto."; return; }
+        if (cantidad <= 0) { errorLinea = "La cantidad debe ser mayor a cero."; return; }
+        if (precio <= 0) { errorLinea = "El precio debe ser mayor a cero."; return; }
+
+        var existente = lineas.FirstOrDefault(l => l.IdProducto == idProducto);
+        if (existente is not null) { existente.Cantidad += cantidad; existente.PrecioCosto = precio; }
+        else
+        {
+            var p = productos.First(x => x.IdProducto == idProducto);
+            lineas.Add(new Linea { IdProducto = idProducto, Descripcion = p.Descripcion, Cantidad = cantidad, PrecioCosto = precio });
+        }
+        idProducto = 0; cantidad = 1; precio = 0;
+    }
+
+    async Task Guardar()
+    {
+        error = null;
+        if (idProveedor == 0) { error = "Debe seleccionar un proveedor."; return; }
+        if (lineas.Count == 0) { error = "Agregue al menos un producto a la compra."; return; }
+
+        guardando = true;
+        try
+        {
+            var dto = new CompraCreate
+            {
+                IdProveedor = idProveedor,
+                Detalles = lineas.Select(l => new CompraDetalleCreate
+                    { IdProducto = l.IdProducto, Cantidad = l.Cantidad, PrecioCosto = l.PrecioCosto }).ToList()
+            };
+            var r = await Http.PostAsJsonAsync("api/compras", dto);
+            if (r.IsSuccessStatusCode) { Nav.NavigateTo("compras"); return; }
+            error = await ApiErrors.ReadAsync(r);
+        }
+        catch (HttpRequestException) { error = "No se pudo conectar con el servidor."; }
+        guardando = false;
+    }
+}
