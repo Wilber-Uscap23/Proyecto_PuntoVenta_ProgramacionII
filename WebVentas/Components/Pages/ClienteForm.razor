@@ -1,0 +1,118 @@
+@page "/clientes/nuevo"
+@page "/clientes/editar/{Id:int}"
+@rendermode InteractiveServer
+@using WebVentas.Models
+@using WebVentas.Services
+@inject ClientesService Servicio
+@inject NavigationManager Nav
+
+<PageTitle>@(Id is null ? "Nuevo cliente" : "Editar cliente")</PageTitle>
+
+<h3>@(Id is null ? "Nuevo cliente" : $"Editar cliente #{Id}")</h3>
+
+@if (!string.IsNullOrEmpty(error))
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+@if (cargando)
+{
+    <p>Cargando...</p>
+}
+else
+{
+    <EditForm Model="cliente" OnValidSubmit="Guardar">
+        <DataAnnotationsValidator />
+
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Nombre *</label>
+                <InputText class="form-control" @bind-Value="cliente.nombre" maxlength="100" />
+                <ValidationMessage For="() => cliente.nombre" class="text-danger" />
+            </div>
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Apellido *</label>
+                <InputText class="form-control" @bind-Value="cliente.apellido" maxlength="100" />
+                <ValidationMessage For="() => cliente.apellido" class="text-danger" />
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-4 mb-3">
+                <label class="form-label">NIT (o CF)</label>
+                <InputText class="form-control" @bind-Value="cliente.nit" placeholder="3602978-5" maxlength="20" />
+                <ValidationMessage For="() => cliente.nit" class="text-danger" />
+            </div>
+            <div class="col-md-4 mb-3">
+                <label class="form-label">Teléfono</label>
+                <InputText class="form-control" @bind-Value="cliente.telefono" placeholder="5551 2345" maxlength="16" />
+                <ValidationMessage For="() => cliente.telefono" class="text-danger" />
+            </div>
+            <div class="col-md-4 mb-3">
+                <label class="form-label">Correo</label>
+                <InputText class="form-control" @bind-Value="cliente.correo" placeholder="nombre@correo.com" maxlength="150" />
+                <ValidationMessage For="() => cliente.correo" class="text-danger" />
+            </div>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Dirección</label>
+            <InputText class="form-control" @bind-Value="cliente.direccion" maxlength="255" />
+            <ValidationMessage For="() => cliente.direccion" class="text-danger" />
+        </div>
+
+        <div class="form-check mb-3">
+            <InputCheckbox class="form-check-input" id="activo" @bind-Value="cliente.estado" />
+            <label class="form-check-label" for="activo">Cliente activo</label>
+        </div>
+
+        <button type="submit" class="btn btn-success" disabled="@guardando">Guardar</button>
+        <a class="btn btn-secondary" href="clientes">Cancelar</a>
+    </EditForm>
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private Cliente cliente = new();
+    private bool cargando = true;
+    private bool guardando;
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Id is not null)
+        {
+            try
+            {
+                var existente = await Servicio.ObtenerAsync(Id.Value);
+                if (existente == null) error = "No se encontró el cliente.";
+                else cliente = existente;
+            }
+            catch (Exception)
+            {
+                error = "No se pudo conectar con la API. Verifica que ApiVentas esté ejecutándose.";
+            }
+        }
+        cargando = false;
+    }
+
+    private async Task Guardar()
+    {
+        error = null;
+        cliente.Normalizar();
+
+        guardando = true;
+        var resultado = Id is null
+            ? await Servicio.CrearAsync(cliente)
+            : await Servicio.EditarAsync(cliente);
+        guardando = false;
+
+        if (resultado != null)
+        {
+            error = resultado;
+            return;
+        }
+        Nav.NavigateTo("clientes");
+    }
+}

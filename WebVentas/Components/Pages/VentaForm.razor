@@ -1,0 +1,659 @@
+@page "/ventas/nueva"
+@page "/ventas/editar/{Id:int}"
+@rendermode InteractiveServer
+@using WebVentas.Models
+@using WebVentas.Services
+@using WebVentas.Helpers
+@inject WebVentas.Services.VentasService Servicio
+@inject WebVentas.Services.BusquedaService Busqueda
+@inject NavigationManager Nav
+
+<PageTitle>@(Id is null ? "Nueva venta" : "Editar venta")</PageTitle>
+
+<h3>@(Id is null ? "Nueva venta" : $"Editar venta #{Id}")</h3>
+
+@if (!string.IsNullOrEmpty(error))
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+@if (cargando)
+{
+    <p>Cargando...</p>
+}
+else
+{
+    <EditForm Model="venta" OnValidSubmit="Guardar">
+        @* Botón oculto y deshabilitado: evita que la tecla Enter envíe la venta por accidente
+           (Enter se usa para buscar cliente/empleado y para escanear productos). *@
+        <button type="submit" disabled style="display:none" aria-hidden="true"></button>
+
+        <DataAnnotationsValidator />
+        <ValidationSummary class="text-danger" />
+
+        @* ===== MAESTRO: datos generales de la venta ===== *@
+        <div class="card mb-3">
+            <div class="card-header">Datos de la venta</div>
+            <div class="card-body">
+                <div class="row">
+
+                    @* ----- CLIENTE: se busca por NIT ----- *@
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Cliente (NIT) *</label>
+
+                        @if (clienteSel is null)
+                        {
+                            <div class="input-group">
+                                <input class="form-control" placeholder="Ej: 3602978-5 (CF = consumidor final)"
+                                       maxlength="20"
+                                       @bind="nitBusqueda" @bind:event="oninput"
+                                       @onkeydown="OnNitKeyDown" />
+                                <button type="button" class="btn btn-primary" @onclick="BuscarCliente" disabled="@buscandoCliente">
+                                    @(buscandoCliente ? "Buscando..." : "Buscar")
+                                </button>
+                            </div>
+                            <div class="form-text">Escribe el NIT y presiona Buscar (o Enter).</div>
+
+                            @if (errorNit is not null)
+                            {
+                                <div class="text-danger small mt-1">@errorNit</div>
+                            }
+
+                            @if (clienteNoEncontrado)
+                            {
+                                <div class="alert alert-warning mt-2 mb-2">
+                                    El NIT <strong>@nuevo.nit</strong> no está registrado.
+                                    @if (!mostrarRegistro)
+                                    {
+                                        <button type="button" class="btn btn-sm btn-success ms-2" @onclick="AbrirRegistro">Registrar cliente</button>
+                                    }
+                                </div>
+
+                                @if (mostrarRegistro)
+                                {
+                                    <div class="card card-body">
+                                        <div class="mb-2">
+                                            <label class="form-label small mb-1">NIT</label>
+                                            <input class="form-control" value="@nuevo.nit" disabled />
+                                        </div>
+                                        <input class="form-control mb-2" placeholder="Nombre *" maxlength="100" @bind="nuevo.nombre" />
+                                        <input class="form-control mb-2" placeholder="Apellido *" maxlength="100" @bind="nuevo.apellido" />
+                                        <input class="form-control mb-2" placeholder="Teléfono (8 dígitos)" maxlength="20" @bind="nuevo.telefono" />
+                                        <input class="form-control mb-2" placeholder="Correo" maxlength="150" @bind="nuevo.correo" />
+                                        <input class="form-control mb-2" placeholder="Dirección" maxlength="255" @bind="nuevo.direccion" />
+
+                                        @if (erroresRegistro.Count > 0)
+                                        {
+                                            <ul class="text-danger small mb-2">
+                                                @foreach (var er in erroresRegistro)
+                                                {
+                                                    <li>@er</li>
+                                                }
+                                            </ul>
+                                        }
+
+                                        <div>
+                                            <button type="button" class="btn btn-success" @onclick="RegistrarCliente" disabled="@guardandoCliente">
+                                                @(guardandoCliente ? "Guardando..." : "Guardar y usar en esta venta")
+                                            </button>
+                                            <button type="button" class="btn btn-outline-secondary" @onclick="CancelarRegistro">Cancelar</button>
+                                        </div>
+                                    </div>
+                                }
+                            }
+                        }
+                        else
+                        {
+                            <div class="alert alert-success d-flex justify-content-between align-items-center mb-0">
+                                <span><strong>@clienteSel.nombre @clienteSel.apellido</strong> · NIT @(clienteSel.nit ?? "—")</span>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CambiarCliente">Cambiar</button>
+                            </div>
+                        }
+                    </div>
+
+                    @* ----- EMPLEADO: se busca por id o nombre ----- *@
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Empleado (id o nombre) *</label>
+
+                        @if (empleadoSel is null)
+                        {
+                            <div class="input-group">
+                                <input class="form-control" placeholder="Ej: 3 o María López"
+                                       maxlength="100"
+                                       @bind="empleadoBusqueda" @bind:event="oninput"
+                                       @onkeydown="OnEmpleadoKeyDown" />
+                                <button type="button" class="btn btn-primary" @onclick="BuscarEmpleado" disabled="@buscandoEmpleado">
+                                    @(buscandoEmpleado ? "Buscando..." : "Buscar")
+                                </button>
+                            </div>
+                            <div class="form-text">Escribe el id o parte del nombre y presiona Buscar (o Enter).</div>
+
+                            @if (errorEmpleado is not null)
+                            {
+                                <div class="text-danger small mt-1">@errorEmpleado</div>
+                            }
+
+                            @if (empleadosEncontrados.Count > 1)
+                            {
+                                <div class="list-group mt-1">
+                                    @foreach (var emp in empleadosEncontrados)
+                                    {
+                                        var elegido = emp;
+                                        <button type="button" class="list-group-item list-group-item-action"
+                                                @onclick="() => SeleccionarEmpleado(elegido)">
+                                            #@elegido.id_empleado · @elegido.nombre @elegido.apellido
+                                        </button>
+                                    }
+                                </div>
+                            }
+                        }
+                        else
+                        {
+                            <div class="alert alert-success d-flex justify-content-between align-items-center mb-0">
+                                <span><strong>#@empleadoSel.id_empleado</strong> · @empleadoSel.nombre @empleadoSel.apellido</span>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CambiarEmpleado">Cambiar</button>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <div class="mb-0">
+                    <label class="form-label">Observaciones</label>
+                    <InputTextArea class="form-control" @bind-Value="venta.observaciones" />
+                </div>
+            </div>
+        </div>
+
+        @* ===== DETALLE: productos de la venta ===== *@
+        <div class="card mb-3">
+            <div class="card-header">Detalle de la venta</div>
+            <div class="card-body">
+                @if (Id is null)
+                {
+                    @* ----- Escaneo: el lector de código de barras escribe el código y envía Enter ----- *@
+                    <div class="mb-3">
+                        <label class="form-label">Producto: escanea el código de barras o escribe el código / id</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" maxlength="50" autocomplete="off"
+                                   placeholder="Escanea o escribe el código y presiona Enter"
+                                   @key="claveScan" @ref="scanInput"
+                                   @bind="codigoBusqueda" @bind:event="onchange" @bind:after="AgregarPorCodigo" />
+                            <button type="button" class="btn btn-primary" @onclick="AgregarPorCodigo" disabled="@buscandoProducto">
+                                @(buscandoProducto ? "Buscando..." : "Agregar")
+                            </button>
+                        </div>
+                        @if (errorProducto is not null)
+                        {
+                            <div class="text-danger small mt-1">@errorProducto</div>
+                        }
+                        else if (mensajeProducto is not null)
+                        {
+                            <div class="text-success small mt-1">@mensajeProducto</div>
+                        }
+                    </div>
+
+                    <table class="table table-sm align-middle">
+                        <thead>
+                            <tr>
+                                <th style="min-width:260px">Producto</th>
+                                <th>Existencia</th>
+                                <th>Precio</th>
+                                <th style="width:120px">Cantidad</th>
+                                <th>Subtotal</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (venta.Detalles.Count == 0)
+                            {
+                                <tr>
+                                    <td colspan="6" class="text-muted">Escanea un producto para comenzar la venta.</td>
+                                </tr>
+                            }
+                            @foreach (var d in venta.Detalles)
+                            {
+                                var prod = Prod(d.id_producto);
+                                <tr>
+                                    <td>
+                                        @(prod?.descripcion ?? $"#{d.id_producto}")
+                                        <div class="text-muted small">Código: @(prod?.codigo ?? "—")</div>
+                                    </td>
+                                    <td>@(prod?.existencia.ToString() ?? "—")</td>
+                                    <td>@(prod != null ? "Q " + prod.precio_venta.ToString("N2") : "—")</td>
+                                    <td>
+                                        <input type="number" min="1" class="form-control"
+                                               @bind="d.cantidad" @bind:event="oninput" />
+                                    </td>
+                                    <td>Q @((d.cantidad * (prod?.precio_venta ?? 0)).ToString("N2"))</td>
+                                    <td>
+                                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => Quitar(d)">Quitar</button>
+                                    </td>
+                                </tr>
+                                @if (prod != null && TotalPedido(d.id_producto) > prod.existencia)
+                                {
+                                    <tr>
+                                        <td colspan="6" class="text-danger small">
+                                            Inventario insuficiente para "@prod.descripcion": disponible @prod.existencia, solicitado @TotalPedido(d.id_producto).
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                }
+                else
+                {
+                    <p class="text-muted small">
+                        Los productos de una venta ya confirmada no se modifican, para no alterar el inventario.
+                        Si te equivocaste, elimina la venta (el inventario se restablece) y regístrala de nuevo.
+                    </p>
+                    <table class="table table-sm table-bordered mb-0">
+                        <thead>
+                            <tr><th>Producto</th><th>Cantidad</th><th>Precio</th><th>Subtotal</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var d in venta.Detalles)
+                            {
+                                <tr>
+                                    <td>@(Prod(d.id_producto)?.descripcion ?? $"#{d.id_producto}")</td>
+                                    <td>@d.cantidad</td>
+                                    <td>Q @d.precio_venta.ToString("N2")</td>
+                                    <td>Q @d.subtotal.ToString("N2")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+            <div class="card-footer text-end fs-5">
+                <strong>Total: Q @TotalMostrado.ToString("N2")</strong>
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-success" disabled="@guardando">
+            @(Id is null ? "Confirmar venta" : "Guardar cambios")
+        </button>
+        <a class="btn btn-secondary" href="ventas">Cancelar</a>
+    </EditForm>
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private Venta venta = new();
+    private bool cargando = true;
+    private bool guardando;
+    private string? error;
+
+    // ----- Cliente (búsqueda por NIT) -----
+    private OpcionCliente? clienteSel;
+    private string nitBusqueda = "";
+    private bool buscandoCliente, clienteNoEncontrado, mostrarRegistro, guardandoCliente;
+    private string? errorNit;
+    private NuevoCliente nuevo = new();
+    private List<string> erroresRegistro = new();
+
+    // ----- Empleado (búsqueda por id o nombre) -----
+    private OpcionEmpleado? empleadoSel;
+    private string empleadoBusqueda = "";
+    private List<OpcionEmpleado> empleadosEncontrados = new();
+    private bool buscandoEmpleado;
+    private string? errorEmpleado;
+
+    // ----- Productos (escaneo por código de barras o id) -----
+    // Solo se guardan los productos que se han escaneado en esta venta (no se carga el catálogo completo).
+    private readonly Dictionary<int, OpcionProducto> productosEnVenta = new();
+    private string codigoBusqueda = "";
+    private bool buscandoProducto;
+    private string? errorProducto, mensajeProducto;
+    private int claveScan;                 // al cambiar, el campo de escaneo se recrea vacío
+    private ElementReference scanInput;
+    private bool enfocarScan;
+
+    private OpcionProducto? Prod(int id)
+        => productosEnVenta.TryGetValue(id, out var p) ? p : null;
+
+    private int TotalPedido(int idProducto)
+        => venta.Detalles.Where(x => x.id_producto == idProducto).Sum(x => x.cantidad);
+
+    private decimal TotalMostrado => Id is null
+        ? venta.Detalles.Sum(d => d.cantidad * (Prod(d.id_producto)?.precio_venta ?? 0))
+        : venta.total;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            if (Id is not null)
+            {
+                var existente = await Servicio.ObtenerAsync(Id.Value);
+                if (existente == null)
+                {
+                    error = "No se encontró la venta.";
+                }
+                else
+                {
+                    venta = existente;
+
+                    // Muestra quién es el cliente y el empleado ya guardados en la venta.
+                    clienteSel = await Busqueda.ObtenerClienteAsync(venta.id_cliente);
+                    var (lista, _) = await Busqueda.BuscarEmpleadosAsync(venta.id_empleado.ToString(), soloActivos: false);
+                    empleadoSel = lista.FirstOrDefault(e => e.id_empleado == venta.id_empleado);
+
+                    // Nombres de los productos de la venta (una sola consulta por sus ids).
+                    var productos = await Busqueda.ProductosPorIdsAsync(venta.Detalles.Select(d => d.id_producto));
+                    foreach (var p in productos) productosEnVenta[p.id_producto] = p;
+                }
+            }
+            else
+            {
+                enfocarScan = true;   // la venta nueva arranca con el cursor listo para escanear
+            }
+        }
+        catch (Exception)
+        {
+            error = "No se pudo conectar con la API. Verifica que ApiVentas esté ejecutándose.";
+        }
+        cargando = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (enfocarScan)
+        {
+            enfocarScan = false;
+            try { await scanInput.FocusAsync(); } catch { /* el campo aún no existe: se ignora */ }
+        }
+    }
+
+    // ===================== CLIENTE =====================
+    private async Task OnNitKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await BuscarCliente();
+    }
+
+    private async Task BuscarCliente()
+    {
+        errorNit = null;
+        clienteNoEncontrado = false;
+        mostrarRegistro = false;
+
+        if (string.IsNullOrWhiteSpace(nitBusqueda))
+        {
+            errorNit = "Ingresa el NIT del cliente (o CF para consumidor final).";
+            return;
+        }
+
+        if (!NitValidator.EsValido(nitBusqueda))
+        {
+            errorNit = "NIT inválido. Escribe CF o un NIT con su dígito verificador correcto (ej. 3602978-5).";
+            return;
+        }
+
+        buscandoCliente = true;
+        var (cliente, err) = await Busqueda.BuscarClienteAsync(nitBusqueda);
+        buscandoCliente = false;
+
+        if (err != null)
+        {
+            errorNit = err;
+        }
+        else if (cliente != null)
+        {
+            SeleccionarCliente(cliente);
+        }
+        else
+        {
+            // No existe: se ofrece registrarlo con el NIT ya escrito.
+            clienteNoEncontrado = true;
+            nuevo = new NuevoCliente { nit = NitValidator.Formatear(nitBusqueda) };
+        }
+    }
+
+    private void SeleccionarCliente(OpcionCliente c)
+    {
+        clienteSel = c;
+        venta.id_cliente = c.id_cliente;
+        clienteNoEncontrado = false;
+        mostrarRegistro = false;
+        errorNit = null;
+    }
+
+    private void AbrirRegistro()
+    {
+        erroresRegistro = new();
+        mostrarRegistro = true;
+    }
+
+    private void CancelarRegistro()
+    {
+        mostrarRegistro = false;
+        clienteNoEncontrado = false;
+        erroresRegistro = new();
+    }
+
+    private async Task RegistrarCliente()
+    {
+        erroresRegistro = BusquedaService.ValidarNuevoCliente(nuevo);
+        if (erroresRegistro.Count > 0) return;
+
+        guardandoCliente = true;
+        var (cliente, err) = await Busqueda.RegistrarClienteAsync(nuevo);
+        guardandoCliente = false;
+
+        if (err != null)
+        {
+            erroresRegistro = new() { err };   // p. ej. correo repetido o NIT inválido según la API
+            return;
+        }
+
+        if (cliente != null) SeleccionarCliente(cliente);
+    }
+
+    private void CambiarCliente()
+    {
+        clienteSel = null;
+        venta.id_cliente = 0;
+        nitBusqueda = "";
+        clienteNoEncontrado = false;
+        mostrarRegistro = false;
+        errorNit = null;
+    }
+
+    // ===================== EMPLEADO =====================
+    private async Task OnEmpleadoKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await BuscarEmpleado();
+    }
+
+    private async Task BuscarEmpleado()
+    {
+        errorEmpleado = null;
+        empleadosEncontrados = new();
+
+        if (string.IsNullOrWhiteSpace(empleadoBusqueda))
+        {
+            errorEmpleado = "Escribe el id o el nombre del empleado.";
+            return;
+        }
+
+        buscandoEmpleado = true;
+        var (lista, err) = await Busqueda.BuscarEmpleadosAsync(empleadoBusqueda);
+        buscandoEmpleado = false;
+
+        if (err != null)
+        {
+            errorEmpleado = err;
+        }
+        else if (lista.Count == 0)
+        {
+            errorEmpleado = "No se encontró ningún empleado activo con ese id o nombre.";
+        }
+        else if (lista.Count == 1)
+        {
+            SeleccionarEmpleado(lista[0]);
+        }
+        else
+        {
+            empleadosEncontrados = lista;   // varios resultados: el usuario elige uno
+        }
+    }
+
+    private void SeleccionarEmpleado(OpcionEmpleado emp)
+    {
+        empleadoSel = emp;
+        venta.id_empleado = emp.id_empleado;
+        empleadosEncontrados = new();
+        errorEmpleado = null;
+    }
+
+    private void CambiarEmpleado()
+    {
+        empleadoSel = null;
+        venta.id_empleado = 0;
+        empleadoBusqueda = "";
+        empleadosEncontrados = new();
+        errorEmpleado = null;
+    }
+
+    // ===================== DETALLE (escaneo de productos) =====================
+    // Se ejecuta al presionar Enter en el campo (lo que envía el lector de código de barras)
+    // o al pulsar el botón "Agregar".
+    private async Task AgregarPorCodigo()
+    {
+        if (buscandoProducto) return;
+
+        var codigo = (codigoBusqueda ?? "").Trim();
+        enfocarScan = true;
+        if (codigo.Length == 0) return;
+
+        // Se limpia el campo de inmediato para poder escanear el siguiente producto.
+        codigoBusqueda = "";
+        claveScan++;
+        errorProducto = null;
+        mensajeProducto = null;
+
+        if (codigo.Length > 50)
+        {
+            errorProducto = "El código no puede pasar de 50 caracteres.";
+            return;
+        }
+
+        buscandoProducto = true;
+        var (prod, err) = await Busqueda.BuscarProductoAsync(codigo);
+        buscandoProducto = false;
+        enfocarScan = true;
+
+        if (err != null)
+        {
+            errorProducto = err;
+            return;
+        }
+        if (prod == null)
+        {
+            errorProducto = $"No existe ningún producto con el código o id \"{codigo}\".";
+            return;
+        }
+        if (prod.existencia <= 0)
+        {
+            errorProducto = $"\"{prod.descripcion}\" no tiene existencia.";
+            return;
+        }
+
+        // Se actualizan precio y existencia con lo que acaba de devolver la base de datos.
+        productosEnVenta[prod.id_producto] = prod;
+
+        var linea = venta.Detalles.FirstOrDefault(d => d.id_producto == prod.id_producto);
+        if (linea != null)
+        {
+            // Mismo producto escaneado otra vez: suma 1 a la cantidad.
+            if (linea.cantidad + 1 > prod.existencia)
+            {
+                errorProducto = $"Inventario insuficiente para \"{prod.descripcion}\": disponible {prod.existencia}.";
+                return;
+            }
+            linea.cantidad++;
+            mensajeProducto = $"{prod.descripcion}: cantidad {linea.cantidad} (Q {prod.precio_venta:N2} c/u, existencia {prod.existencia}).";
+        }
+        else
+        {
+            venta.Detalles.Add(new VentasDetalle { id_producto = prod.id_producto, cantidad = 1 });
+            mensajeProducto = $"Agregado: {prod.descripcion} (Q {prod.precio_venta:N2}, existencia {prod.existencia}).";
+        }
+    }
+
+    private void Quitar(VentasDetalle d)
+    {
+        venta.Detalles.Remove(d);
+        enfocarScan = true;
+    }
+
+    // ===================== GUARDAR =====================
+    private async Task Guardar()
+    {
+        error = null;
+
+        if (clienteSel is null || venta.id_cliente <= 0)
+        {
+            error = "Busca y selecciona un cliente por su NIT.";
+            return;
+        }
+        if (empleadoSel is null || venta.id_empleado <= 0)
+        {
+            error = "Busca y selecciona un empleado por su id o nombre.";
+            return;
+        }
+
+        if (Id is null)
+        {
+            if (venta.Detalles.Count == 0)
+            {
+                error = "Escanea al menos un producto para la venta.";
+                return;
+            }
+            if (venta.Detalles.Any(d => d.id_producto <= 0))
+            {
+                error = "Hay una línea sin producto. Quítala o escanea el producto.";
+                return;
+            }
+            if (venta.Detalles.Any(d => d.cantidad <= 0))
+            {
+                error = "La cantidad de cada producto debe ser mayor a 0.";
+                return;
+            }
+
+            // Validar inventario antes de confirmar (la API lo vuelve a validar).
+            foreach (var grupo in venta.Detalles.GroupBy(d => d.id_producto))
+            {
+                var prod = Prod(grupo.Key);
+                var pedido = grupo.Sum(x => x.cantidad);
+                if (prod == null || pedido > prod.existencia)
+                {
+                    error = $"Inventario insuficiente para \"{prod?.descripcion}\": disponible {prod?.existencia ?? 0}, solicitado {pedido}.";
+                    return;
+                }
+            }
+
+            // El precio se toma de Productos; la API lo vuelve a tomar al guardar.
+            foreach (var d in venta.Detalles)
+            {
+                d.precio_venta = Prod(d.id_producto)!.precio_venta;
+                d.subtotal = d.cantidad * d.precio_venta;
+            }
+            venta.total = venta.Detalles.Sum(d => d.subtotal);
+        }
+
+        guardando = true;
+        var resultado = Id is null
+            ? await Servicio.CrearAsync(venta)
+            : await Servicio.EditarAsync(venta);
+        guardando = false;
+
+        if (resultado != null)
+        {
+            error = resultado;
+            return;
+        }
+        Nav.NavigateTo("ventas");
+    }
+}

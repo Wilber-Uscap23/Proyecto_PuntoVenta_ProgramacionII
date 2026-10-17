@@ -1,0 +1,142 @@
+@page "/clientes"
+@rendermode InteractiveServer
+@using WebVentas.Models
+@using WebVentas.Services
+@inject ClientesService Servicio
+@inject IJSRuntime JS
+
+<PageTitle>Clientes</PageTitle>
+
+<h3>Clientes</h3>
+
+<div class="d-flex gap-2 mb-3 flex-wrap">
+    <a class="btn btn-primary" href="clientes/nuevo">+ Nuevo cliente</a>
+    <input class="form-control w-auto flex-grow-1" style="max-width:420px"
+           placeholder="Buscar por nombre, NIT, teléfono, correo o dirección"
+           @bind="busqueda" @bind:event="oninput" @onkeydown="Teclado" />
+    <select class="form-select w-auto" @bind="filtroEstado">
+        <option value="">Todos</option>
+        <option value="true">Activos</option>
+        <option value="false">Inactivos</option>
+    </select>
+    <button class="btn btn-outline-primary" @onclick="Buscar">Buscar</button>
+    <button class="btn btn-outline-secondary" @onclick="Limpiar">Limpiar</button>
+</div>
+
+@if (!string.IsNullOrEmpty(error))
+{
+    <div class="alert alert-danger">@error</div>
+}
+@if (!string.IsNullOrEmpty(exito))
+{
+    <div class="alert alert-success">@exito</div>
+}
+
+@if (cargando)
+{
+    <p>Cargando...</p>
+}
+else if (clientes.Count == 0)
+{
+    <p>No se encontraron clientes.</p>
+}
+else
+{
+    <table class="table table-striped align-middle">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Nombre</th>
+                <th>NIT</th>
+                <th>Teléfono</th>
+                <th>Correo</th>
+                <th>Dirección</th>
+                <th>Estado</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var c in clientes)
+            {
+                <tr>
+                    <td>@c.id_cliente</td>
+                    <td>@c.nombre @c.apellido</td>
+                    <td>@c.nit</td>
+                    <td>@c.telefono</td>
+                    <td>@c.correo</td>
+                    <td>@c.direccion</td>
+                    <td>
+                        <span class="badge @(c.estado ? "bg-success" : "bg-secondary")">@(c.estado ? "Activo" : "Inactivo")</span>
+                    </td>
+                    <td class="text-nowrap">
+                        <a class="btn btn-sm btn-warning" href="clientes/editar/@c.id_cliente">Editar</a>
+                        <button class="btn btn-sm btn-danger" @onclick="() => Eliminar(c)">Eliminar</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<Cliente> clientes = new();
+    private string busqueda = "";
+    private string filtroEstado = "";
+    private bool cargando = true;
+    private string? error;
+    private string? exito;
+
+    protected override async Task OnInitializedAsync() => await Cargar();
+
+    private async Task Cargar()
+    {
+        try
+        {
+            error = null;
+            bool? estado = filtroEstado == "" ? null : bool.Parse(filtroEstado);
+            clientes = await Servicio.ListarAsync(busqueda, estado);
+        }
+        catch (Exception)
+        {
+            error = "No se pudo conectar con la API. Verifica que ApiVentas esté ejecutándose.";
+        }
+        cargando = false;
+    }
+
+    private async Task Buscar()
+    {
+        exito = null;
+        await Cargar();
+    }
+
+    private async Task Limpiar()
+    {
+        busqueda = "";
+        filtroEstado = "";
+        exito = null;
+        await Cargar();
+    }
+
+    private async Task Teclado(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await Buscar();
+    }
+
+    private async Task Eliminar(Cliente c)
+    {
+        var confirmar = await JS.InvokeAsync<bool>("confirm",
+            $"¿Seguro que deseas eliminar al cliente {c.nombre} {c.apellido}?");
+        if (!confirmar) return;
+
+        var resultado = await Servicio.EliminarAsync(c.id_cliente);
+        if (resultado != null)
+        {
+            exito = null;
+            error = resultado;
+            return;
+        }
+
+        exito = "Cliente eliminado correctamente.";
+        await Cargar();
+    }
+}

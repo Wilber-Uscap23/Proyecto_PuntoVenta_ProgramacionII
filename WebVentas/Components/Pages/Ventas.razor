@@ -1,0 +1,162 @@
+@page "/ventas"
+@rendermode InteractiveServer
+@using WebVentas.Models
+@using WebVentas.Services
+@inject VentasService Servicio
+@inject IJSRuntime JS
+
+<PageTitle>Ventas</PageTitle>
+
+<h3>Ventas</h3>
+
+<a class="btn btn-primary mb-3" href="ventas/nueva">+ Nueva venta</a>
+
+@if (!string.IsNullOrEmpty(error))
+{
+    <div class="alert alert-danger">@error</div>
+}
+@if (!string.IsNullOrEmpty(exito))
+{
+    <div class="alert alert-success">@exito</div>
+}
+
+@if (cargando)
+{
+    <p>Cargando...</p>
+}
+else if (ventas.Count == 0)
+{
+    <p>No hay ventas registradas.</p>
+}
+else
+{
+    <table class="table table-striped align-middle">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Cliente</th>
+                <th>Empleado</th>
+                <th>Fecha</th>
+                <th>Total</th>
+                <th>Estado</th>
+                <th>Observaciones</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var v in ventas)
+            {
+                <tr>
+                    <td>@v.id_venta</td>
+                    <td>@NombreCliente(v.id_cliente)</td>
+                    <td>@NombreEmpleado(v.id_empleado)</td>
+                    <td>@v.fecha_venta.ToString("dd/MM/yyyy HH:mm")</td>
+                    <td>Q @v.total.ToString("N2")</td>
+                    <td>@v.estado</td>
+                    <td>@v.observaciones</td>
+                    <td class="text-nowrap">
+                        <button class="btn btn-sm btn-secondary" @onclick="() => Alternar(v.id_venta)">
+                            @(abiertas.Contains(v.id_venta) ? "Ocultar detalle" : "Ver detalle")
+                        </button>
+                        <a class="btn btn-sm btn-info" href="ventas/factura/@v.id_venta">Factura</a>
+                        <a class="btn btn-sm btn-warning" href="ventas/editar/@v.id_venta">Editar</a>
+                        <button class="btn btn-sm btn-danger" @onclick="() => Eliminar(v)">Eliminar</button>
+                    </td>
+                </tr>
+                @if (abiertas.Contains(v.id_venta))
+                {
+                    <tr>
+                        <td colspan="8">
+                            @if (v.Detalles.Count == 0)
+                            {
+                                <em>Esta venta no tiene detalles.</em>
+                            }
+                            else
+                            {
+                                <table class="table table-sm table-bordered mb-0">
+                                    <thead>
+                                        <tr><th>Producto</th><th>Cantidad</th><th>Precio</th><th>Subtotal</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var d in v.Detalles)
+                                        {
+                                            <tr>
+                                                <td>@NombreProducto(d.id_producto)</td>
+                                                <td>@d.cantidad</td>
+                                                <td>Q @d.precio_venta.ToString("N2")</td>
+                                                <td>Q @d.subtotal.ToString("N2")</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            }
+                        </td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<Venta> ventas = new();
+    private Dictionary<int, OpcionCliente> clientes = new();
+    private Dictionary<int, OpcionEmpleado> empleados = new();
+    private Dictionary<int, OpcionProducto> productos = new();
+    private HashSet<int> abiertas = new();
+    private bool cargando = true;
+    private string? error;
+    private string? exito;
+
+    protected override async Task OnInitializedAsync() => await Cargar();
+
+    private async Task Cargar()
+    {
+        try
+        {
+            error = null;
+            ventas = await Servicio.ListarAsync();
+            var cat = await Servicio.CatalogosAsync();
+            clientes = cat.Clientes.ToDictionary(c => c.id_cliente);
+            empleados = cat.Empleados.ToDictionary(e => e.id_empleado);
+            productos = cat.Productos.ToDictionary(p => p.id_producto);
+        }
+        catch (Exception)
+        {
+            error = "No se pudo conectar con la API. Verifica que ApiVentas esté ejecutándose.";
+        }
+        cargando = false;
+    }
+
+    private string NombreCliente(int id)
+        => clientes.TryGetValue(id, out var c) ? $"{c.nombre} {c.apellido}" : $"#{id}";
+
+    private string NombreEmpleado(int id)
+        => empleados.TryGetValue(id, out var e) ? $"{e.nombre} {e.apellido}" : $"#{id}";
+
+    private string NombreProducto(int id)
+        => productos.TryGetValue(id, out var p) ? p.descripcion : $"#{id}";
+
+    private void Alternar(int id)
+    {
+        if (!abiertas.Remove(id)) abiertas.Add(id);
+    }
+
+    private async Task Eliminar(Venta v)
+    {
+        var confirmar = await JS.InvokeAsync<bool>("confirm",
+            $"¿Seguro que deseas eliminar la venta #{v.id_venta}? Sus detalles se borrarán y los productos regresarán al inventario.");
+        if (!confirmar) return;
+
+        var resultado = await Servicio.EliminarAsync(v.id_venta);
+        if (resultado != null)
+        {
+            exito = null;
+            error = resultado;
+            return;
+        }
+
+        exito = $"Venta #{v.id_venta} eliminada. El inventario fue restablecido.";
+        await Cargar();
+    }
+}
