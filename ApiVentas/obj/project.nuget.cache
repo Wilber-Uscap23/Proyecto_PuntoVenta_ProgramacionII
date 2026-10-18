@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "WL4B+5qawJ0=",
+  "dgSpecHash": "UWJ2XJ+7Di4=",
   "success": true,
-  "projectFilePath": "C:\\Users\\josan\\OneDrive\\Documentos\\UNIVERSIDAD\\PROGRAMACION 2\\ApiVentas\\ApiVentas.csproj",
+  "projectFilePath": "C:\\Users\\josan\\Downloads\\proyecto final 4to semestre\\Proyecto_PuntoVenta_ProgramacionII\\ApiVentas\\ApiVentas.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\josan\\.nuget\\packages\\azure.core\\1.50.0\\azure.core.1.50.0.nupkg.sha512",
     "C:\\Users\\josan\\.nuget\\packages\\azure.identity\\1.17.1\\azure.identity.1.17.1.nupkg.sha512",

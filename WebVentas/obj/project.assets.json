@@ -50,11 +50,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\josan\\OneDrive\\Documentos\\UNIVERSIDAD\\PROGRAMACION 2\\WebVentas\\WebVentas.csproj",
+      "projectUniqueName": "C:\\Users\\josan\\Downloads\\proyecto final 4to semestre\\Proyecto_PuntoVenta_ProgramacionII\\WebVentas\\WebVentas.csproj",
       "projectName": "WebVentas",
-      "projectPath": "C:\\Users\\josan\\OneDrive\\Documentos\\UNIVERSIDAD\\PROGRAMACION 2\\WebVentas\\WebVentas.csproj",
+      "projectPath": "C:\\Users\\josan\\Downloads\\proyecto final 4to semestre\\Proyecto_PuntoVenta_ProgramacionII\\WebVentas\\WebVentas.csproj",
       "packagesPath": "C:\\Users\\josan\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\josan\\OneDrive\\Documentos\\UNIVERSIDAD\\PROGRAMACION 2\\WebVentas\\obj\\",
+      "outputPath": "C:\\Users\\josan\\Downloads\\proyecto final 4to semestre\\Proyecto_PuntoVenta_ProgramacionII\\WebVentas\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\josan\\AppData\\Roaming\\NuGet\\NuGet.Config"

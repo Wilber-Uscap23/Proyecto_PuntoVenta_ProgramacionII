@@ -23,7 +23,7 @@
 }
 else
 {
-    <EditForm Model="venta" OnValidSubmit="Guardar">
+    <EditForm EditContext="editContext" OnSubmit="Enviar">
         @* Botón oculto y deshabilitado: evita que la tecla Enter envíe la venta por accidente
            (Enter se usa para buscar cliente/empleado y para escanear productos). *@
         <button type="submit" disabled style="display:none" aria-hidden="true"></button>
@@ -37,14 +37,14 @@ else
             <div class="card-body">
                 <div class="row">
 
-                    @* ----- CLIENTE: se busca por NIT ----- *@
+                    @* ----- CLIENTE: se busca por NIT (vacío = CF) ----- *@
                     <div class="col-md-6 mb-3">
                         <label class="form-label">Cliente (NIT) *</label>
 
                         @if (clienteSel is null)
                         {
                             <div class="input-group">
-                                <input class="form-control" placeholder="Ej: 3602978-5 (CF = consumidor final)"
+                                <input class="form-control" placeholder="Ej: 3602978-5 (vacío = CF)"
                                        maxlength="20"
                                        @bind="nitBusqueda" @bind:event="oninput"
                                        @onkeydown="OnNitKeyDown" />
@@ -52,7 +52,7 @@ else
                                     @(buscandoCliente ? "Buscando..." : "Buscar")
                                 </button>
                             </div>
-                            <div class="form-text">Escribe el NIT y presiona Buscar (o Enter).</div>
+                            <div class="form-text">Escribe el NIT y presiona Buscar (o Enter). Si lo dejas vacío se usa CF (Consumidor Final).</div>
 
                             @if (errorNit is not null)
                             {
@@ -281,11 +281,12 @@ else
     [Parameter] public int? Id { get; set; }
 
     private Venta venta = new();
+    private EditContext? editContext;
     private bool cargando = true;
     private bool guardando;
     private string? error;
 
-    // ----- Cliente (búsqueda por NIT) -----
+    // ----- Cliente (búsqueda por NIT; vacío = CF) -----
     private OpcionCliente? clienteSel;
     private string nitBusqueda = "";
     private bool buscandoCliente, clienteNoEncontrado, mostrarRegistro, guardandoCliente;
@@ -354,6 +355,8 @@ else
         {
             error = "No se pudo conectar con la API. Verifica que ApiVentas esté ejecutándose.";
         }
+
+        editContext = new EditContext(venta);
         cargando = false;
     }
 
@@ -378,11 +381,9 @@ else
         clienteNoEncontrado = false;
         mostrarRegistro = false;
 
+        // NIT vacío = Consumidor Final
         if (string.IsNullOrWhiteSpace(nitBusqueda))
-        {
-            errorNit = "Ingresa el NIT del cliente (o CF para consumidor final).";
-            return;
-        }
+            nitBusqueda = "CF";
 
         if (!NitValidator.EsValido(nitBusqueda))
         {
@@ -402,12 +403,28 @@ else
         {
             SeleccionarCliente(cliente);
         }
+        else if (NitValidator.Formatear(nitBusqueda) == "CF")
+        {
+            // Aún no existe el cliente CF: se crea automáticamente como "Consumidor Final".
+            await RegistrarConsumidorFinal();
+        }
         else
         {
             // No existe: se ofrece registrarlo con el NIT ya escrito.
             clienteNoEncontrado = true;
             nuevo = new NuevoCliente { nit = NitValidator.Formatear(nitBusqueda) };
         }
+    }
+
+    private async Task RegistrarConsumidorFinal()
+    {
+        buscandoCliente = true;
+        var (cliente, err) = await Busqueda.RegistrarClienteAsync(
+            new NuevoCliente { nombre = "Consumidor", apellido = "Final", nit = "CF" });
+        buscandoCliente = false;
+
+        if (err != null) errorNit = err;
+        else if (cliente != null) SeleccionarCliente(cliente);
     }
 
     private void SeleccionarCliente(OpcionCliente c)
@@ -589,13 +606,26 @@ else
     }
 
     // ===================== GUARDAR =====================
+    // Se ejecuta al enviar el formulario. Si no hay cliente y el NIT está vacío, usa CF
+    // antes de validar.
+    private async Task Enviar()
+    {
+        error = null;
+
+        if (clienteSel is null && string.IsNullOrWhiteSpace(nitBusqueda))
+            await BuscarCliente();   // con el NIT vacío selecciona (o crea) el cliente CF
+
+        if (editContext!.Validate())
+            await Guardar();
+    }
+
     private async Task Guardar()
     {
         error = null;
 
         if (clienteSel is null || venta.id_cliente <= 0)
         {
-            error = "Busca y selecciona un cliente por su NIT.";
+            error = "Busca y selecciona un cliente por su NIT (o déjalo vacío para CF).";
             return;
         }
         if (empleadoSel is null || venta.id_empleado <= 0)

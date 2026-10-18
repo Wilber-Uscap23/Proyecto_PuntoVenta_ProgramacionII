@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\josan\\OneDrive\\Documentos\\UNIVERSIDAD\\PROGRAMACION 2\\ApiVentas\\ApiVentas.csproj": {}
+    "C:\\Users\\josan\\Downloads\\proyecto final 4to semestre\\Proyecto_PuntoVenta_ProgramacionII\\ApiVentas\\ApiVentas.csproj": {}
   },
   "projects": {
-    "C:\\Users\\josan\\OneDrive\\Documentos\\UNIVERSIDAD\\PROGRAMACION 2\\ApiVentas\\ApiVentas.csproj": {
+    "C:\\Users\\josan\\Downloads\\proyecto final 4to semestre\\Proyecto_PuntoVenta_ProgramacionII\\ApiVentas\\ApiVentas.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\josan\\OneDrive\\Documentos\\UNIVERSIDAD\\PROGRAMACION 2\\ApiVentas\\ApiVentas.csproj",
+        "projectUniqueName": "C:\\Users\\josan\\Downloads\\proyecto final 4to semestre\\Proyecto_PuntoVenta_ProgramacionII\\ApiVentas\\ApiVentas.csproj",
         "projectName": "ApiVentas",
-        "projectPath": "C:\\Users\\josan\\OneDrive\\Documentos\\UNIVERSIDAD\\PROGRAMACION 2\\ApiVentas\\ApiVentas.csproj",
+        "projectPath": "C:\\Users\\josan\\Downloads\\proyecto final 4to semestre\\Proyecto_PuntoVenta_ProgramacionII\\ApiVentas\\ApiVentas.csproj",
         "packagesPath": "C:\\Users\\josan\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\josan\\OneDrive\\Documentos\\UNIVERSIDAD\\PROGRAMACION 2\\ApiVentas\\obj\\",
+        "outputPath": "C:\\Users\\josan\\Downloads\\proyecto final 4to semestre\\Proyecto_PuntoVenta_ProgramacionII\\ApiVentas\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\josan\\AppData\\Roaming\\NuGet\\NuGet.Config"

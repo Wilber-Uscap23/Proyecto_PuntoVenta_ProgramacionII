@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "zMIwEAMU4gU=",
+  "dgSpecHash": "S6d+4zQXjGU=",
   "success": true,
-  "projectFilePath": "C:\\Users\\josan\\OneDrive\\Documentos\\UNIVERSIDAD\\PROGRAMACION 2\\WebVentas\\WebVentas.csproj",
+  "projectFilePath": "C:\\Users\\josan\\Downloads\\proyecto final 4to semestre\\Proyecto_PuntoVenta_ProgramacionII\\WebVentas\\WebVentas.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\josan\\.nuget\\packages\\microsoft.aspnetcore.app.internal.assets\\10.0.12\\microsoft.aspnetcore.app.internal.assets.10.0.12.nupkg.sha512"
   ],
