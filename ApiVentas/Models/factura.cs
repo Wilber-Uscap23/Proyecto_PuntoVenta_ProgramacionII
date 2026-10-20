@@ -29,6 +29,7 @@ namespace ApiVentas.Models
 
     public class FacturaDocumento
     {
+        // En la vista previa, numero_fel e id_venta valen 0 (se asignan al confirmar).
         public int numero_fel { get; set; }
         public string serie { get; set; } = "A";
         public DateTime fecha_emision { get; set; }
@@ -41,7 +42,6 @@ namespace ApiVentas.Models
         public string comprador_nombre { get; set; } = "";
 
         public int id_venta { get; set; }
-        public string? observaciones { get; set; }
 
         public List<FacturaLinea> Detalles { get; set; } = new();
         public int total_unidades { get; set; }

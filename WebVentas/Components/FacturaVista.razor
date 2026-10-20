@@ -1,0 +1,116 @@
+@using WebVentas.Models
+
+<style>
+    .factura {
+        max-width: 820px;
+        margin: 0 auto;
+        background: #fff;
+        color: #000;
+        border: 1px solid #bbb;
+        padding: 28px 32px;
+        font-family: Arial, Helvetica, sans-serif;
+    }
+    .factura h4, .factura h5 { margin: 0; letter-spacing: .5px; }
+    .factura .seccion { border-top: 1px dashed #777; margin-top: 14px; padding-top: 10px; }
+    .factura .titulo-seccion { font-weight: bold; text-align: center; margin-bottom: 6px; }
+    .factura table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+    .factura th { border-bottom: 1px solid #000; padding: 4px 6px; font-size: .9rem; }
+    .factura td { padding: 4px 6px; font-size: .95rem; }
+    .factura .derecha { text-align: right; }
+    .factura .total { font-size: 1.25rem; font-weight: bold; border-top: 1px solid #000; margin-top: 6px; padding-top: 6px; }
+    .factura .vista-previa { border: 2px dashed #c00; color: #c00; font-weight: bold; text-align: center; padding: 6px; margin-bottom: 12px; }
+
+    @@page { margin: 12mm; }
+    @@media print {
+        .sidebar, .top-row, .navbar-toggler, #blazor-error-ui, .no-imprimir { display: none !important; }
+        article.content { padding: 0 !important; }
+        main { width: 100% !important; }
+        body { background: #fff !important; }
+        .factura { border: none !important; padding: 0 !important; max-width: 100% !important; }
+    }
+</style>
+
+<div class="factura">
+    @if (VistaPrevia)
+    {
+        <div class="vista-previa">VISTA PREVIA: la factura aún no está guardada</div>
+    }
+
+    <div class="text-center">
+        <h5>DOCUMENTO TRIBUTARIO ELECTRÓNICO</h5>
+        <h4>FACTURA</h4>
+    </div>
+
+    <div class="seccion">
+        <table>
+            <tr>
+                <td><strong>Serie:</strong> @Factura.serie</td>
+                <td class="derecha"><strong>No. FEL:</strong> @(Factura.numero_fel > 0 ? Factura.numero_fel.ToString("D6") : "Se asigna al confirmar")</td>
+            </tr>
+            <tr>
+                <td><strong>Venta No.:</strong> @(Factura.id_venta > 0 ? Factura.id_venta.ToString() : "Se asigna al confirmar")</td>
+                <td class="derecha"><strong>Fecha de emisión:</strong> @Factura.fecha_emision.ToString("dd/MM/yyyy HH:mm")</td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="seccion">
+        <div class="titulo-seccion">DATOS DEL VENDEDOR</div>
+        <div class="text-center">
+            <div>@Factura.emisor_nombre</div>
+            <div>NIT: @Factura.emisor_nit</div>
+            <div>@Factura.emisor_direccion</div>
+        </div>
+    </div>
+
+    <div class="seccion">
+        <div class="titulo-seccion">DATOS DEL COMPRADOR</div>
+        <div class="text-center">
+            <div>NIT: @Factura.comprador_nit</div>
+            <div>@Factura.comprador_nombre</div>
+        </div>
+    </div>
+
+    <div class="seccion">
+        <div class="titulo-seccion">DETALLE DE LA FACTURA</div>
+        <table>
+            <thead>
+                <tr>
+                    <th class="derecha" style="width:90px">Cantidad</th>
+                    <th>Descripción</th>
+                    <th class="derecha">Precio unitario</th>
+                    <th class="derecha">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var l in Factura.Detalles)
+                {
+                    <tr>
+                        <td class="derecha">@l.cantidad</td>
+                        <td>@l.descripcion</td>
+                        <td class="derecha">Q @l.precio_unitario.ToString("N2")</td>
+                        <td class="derecha">Q @l.subtotal.ToString("N2")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="seccion">
+        <div class="derecha">Total de unidades: <strong>@Factura.total_unidades</strong></div>
+        <div class="derecha">Descuento: Q @Factura.descuento.ToString("N2")</div>
+        <div class="derecha total">TOTAL: Q @Factura.total.ToString("N2")</div>
+        <div class="text-center mt-3"><strong>@Factura.total_letras</strong></div>
+    </div>
+
+    <div class="seccion text-center" style="font-size:.75rem; color:#555;">
+        Documento de demostración elaborado para un proyecto académico. No tiene validez tributaria ante la SAT.
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public FacturaDocumento Factura { get; set; } = default!;
+
+    // true cuando es la vista previa (antes de confirmar la venta)
+    [Parameter] public bool VistaPrevia { get; set; }
+}

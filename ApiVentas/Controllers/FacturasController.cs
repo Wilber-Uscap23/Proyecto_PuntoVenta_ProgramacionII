@@ -19,8 +19,8 @@ namespace ApiVentas.Controllers
             _config = config;
         }
 
-        // Emite la factura de una venta. Si la venta ya tiene factura, devuelve la misma
-        // (con el mismo número FEL), así que se puede llamar las veces que sea necesario.
+        // Devuelve la factura de una venta. Las ventas nuevas ya la traen emitida desde que se confirman;
+        // si es una venta anterior sin factura, se emite aquí (con el siguiente número FEL).
         [HttpPost("venta/{idVenta:int}")]
         public async Task<IActionResult> Emitir(int idVenta)
         {
@@ -43,11 +43,15 @@ namespace ApiVentas.Controllers
                 if (cliente == null)
                     return BadRequest(new { mensaje = "El cliente de la venta ya no existe." });
 
+                var regla = ReglasFactura.Validar(venta.total, cliente);
+                if (regla != null)
+                    return BadRequest(new { mensaje = regla });
+
                 var nueva = new Factura
                 {
                     id_venta = idVenta,
                     fecha_emision = DateTime.Now,
-                    nit_comprador = string.IsNullOrWhiteSpace(cliente.nit) ? "CF" : cliente.nit,
+                    nit_comprador = ReglasFactura.NitComprador(cliente),
                     nombre_comprador = $"{cliente.nombre} {cliente.apellido}",
                     total = venta.total
                 };
@@ -85,28 +89,15 @@ namespace ApiVentas.Controllers
                 })
                 .ToList();
 
-            var documento = new FacturaDocumento
-            {
-                numero_fel = factura.id_factura,
-                serie = _config["Empresa:Serie"] ?? "A",
-                fecha_emision = factura.fecha_emision,
-
-                emisor_nombre = _config["Empresa:Nombre"] ?? "NOMBRE DE TU EMPRESA",
-                emisor_nit = _config["Empresa:Nit"] ?? "NIT DE TU EMPRESA",
-                emisor_direccion = _config["Empresa:Direccion"] ?? "DIRECCIÓN DE TU EMPRESA",
-
-                comprador_nit = factura.nit_comprador,
-                comprador_nombre = factura.nombre_comprador,
-
-                id_venta = venta.id_venta,
-                observaciones = venta.observaciones,
-
-                Detalles = lineas,
-                total_unidades = lineas.Sum(l => l.cantidad),
-                descuento = 0m,
-                total = factura.total,
-                total_letras = NumeroLetras.Convertir(factura.total)
-            };
+            var documento = FacturaBuilder.Construir(
+                _config,
+                factura.id_factura,
+                factura.fecha_emision,
+                factura.nit_comprador,
+                factura.nombre_comprador,
+                venta.id_venta,
+                lineas,
+                factura.total);
 
             return Ok(documento);
         }
