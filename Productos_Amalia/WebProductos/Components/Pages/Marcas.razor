@@ -1,0 +1,177 @@
+@page "/marcas"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@inject MarcasService ServicioMarcas
+@inject IJSRuntime JS
+
+<PageTitle>Mantenimiento de Marcas</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Mantenimiento de Marcas</h1>
+    <a href="/productos" class="btn btn-outline-primary">Ir a Productos →</a>
+</div>
+
+@if (!string.IsNullOrEmpty(mensaje))
+{
+    <div class="alert alert-success">@mensaje</div>
+}
+@if (!string.IsNullOrEmpty(error))
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<div class="card mb-4">
+    <div class="card-header bg-primary text-white">
+        @(actual.IdMarca == 0 ? "Nueva marca" : $"Editando: {actual.Nombre}")
+    </div>
+    <div class="card-body">
+        <EditForm Model="actual" OnValidSubmit="GuardarAsync">
+            <DataAnnotationsValidator />
+
+            <div class="row">
+                <div class="col-md-5 mb-3">
+                    <label class="form-label">Nombre *</label>
+                    <InputText @bind-Value="actual.Nombre" class="form-control" placeholder="Ej. Sony, HP, Dell" />
+                    <ValidationMessage For="() => actual.Nombre" />
+                </div>
+                <div class="col-md-5 mb-3">
+                    <label class="form-label">Descripción</label>
+                    <InputText @bind-Value="actual.Descripcion" class="form-control" />
+                    <ValidationMessage For="() => actual.Descripcion" />
+                </div>
+                <div class="col-md-2 mb-3 d-flex align-items-end">
+                    <div class="form-check">
+                        <InputCheckbox @bind-Value="actual.Estado" class="form-check-input" id="estadoMarca" />
+                        <label class="form-check-label" for="estadoMarca">Activa</label>
+                    </div>
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-success" disabled="@guardando">Guardar</button>
+            @if (actual.IdMarca != 0)
+            {
+                <button type="button" class="btn btn-secondary ms-2" @onclick="Nuevo">Cancelar</button>
+            }
+        </EditForm>
+    </div>
+</div>
+
+<div class="input-group mb-3">
+    <input class="form-control" placeholder="Buscar por nombre o descripción..."
+           @bind="buscar" @bind:event="oninput" @onkeydown="AlPresionarTecla" />
+    <button class="btn btn-outline-secondary" @onclick="CargarAsync">Buscar</button>
+    <button class="btn btn-outline-secondary" @onclick="LimpiarBusquedaAsync">Limpiar</button>
+</div>
+
+<table class="table table-striped align-middle">
+    <thead>
+        <tr><th>ID</th><th>Nombre</th><th>Descripción</th><th>Estado</th><th class="text-end">Acciones</th></tr>
+    </thead>
+    <tbody>
+        @if (lista is null)
+        {
+            <tr><td colspan="5">Cargando marcas...</td></tr>
+        }
+        else if (lista.Count == 0)
+        {
+            <tr><td colspan="5" class="text-muted">No hay marcas para mostrar.</td></tr>
+        }
+        else
+        {
+            @foreach (var m in lista)
+            {
+                <tr>
+                    <td>@m.IdMarca</td>
+                    <td>@m.Nombre</td>
+                    <td>@m.Descripcion</td>
+                    <td>
+                        <span class="badge @(m.Estado ? "bg-success" : "bg-secondary")">@(m.Estado ? "Activa" : "Inactiva")</span>
+                    </td>
+                    <td class="text-end">
+                        <button class="btn btn-warning btn-sm me-1" @onclick="() => Editar(m)">Editar</button>
+                        <button class="btn btn-danger btn-sm" @onclick="() => EliminarAsync(m)">Eliminar</button>
+                    </td>
+                </tr>
+            }
+        }
+    </tbody>
+</table>
+
+@code {
+    private List<MarcaDto>? lista;
+    private MarcaDto actual = new();
+    private string? buscar, mensaje, error;
+    private bool guardando;
+
+    protected override Task OnInitializedAsync() => CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        var r = await ServicioMarcas.ListarAsync(buscar);
+        if (r.Ok)
+        {
+            lista = r.Datos ?? new();
+        }
+        else
+        {
+            lista ??= new();
+            error = r.Error;
+        }
+    }
+
+    private async Task AlPresionarTecla(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await CargarAsync();
+    }
+
+    private async Task LimpiarBusquedaAsync()
+    {
+        buscar = null;
+        await CargarAsync();
+    }
+
+    private async Task GuardarAsync()
+    {
+        mensaje = error = null;
+        guardando = true;
+
+        var esNueva = actual.IdMarca == 0;
+        var r = await ServicioMarcas.GuardarAsync(actual);
+        guardando = false;
+
+        if (!r.Ok)
+        {
+            error = r.Error;   // se conserva el formulario para que el usuario corrija
+            return;
+        }
+
+        mensaje = esNueva ? "Marca creada correctamente." : "Marca actualizada correctamente.";
+        Nuevo();
+        await CargarAsync();
+    }
+
+    private void Editar(MarcaDto m)
+    {
+        mensaje = error = null;
+        actual = new MarcaDto { IdMarca = m.IdMarca, Nombre = m.Nombre, Descripcion = m.Descripcion, Estado = m.Estado };
+    }
+
+    private void Nuevo() => actual = new MarcaDto();
+
+    private async Task EliminarAsync(MarcaDto m)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"¿Eliminar la marca '{m.Nombre}'?")) return;
+
+        mensaje = error = null;
+        var r = await ServicioMarcas.EliminarAsync(m.IdMarca);
+        if (r.Ok)
+        {
+            mensaje = "Marca eliminada.";
+            if (actual.IdMarca == m.IdMarca) Nuevo();
+            await CargarAsync();
+        }
+        else
+        {
+            error = r.Error;   // ej. "tiene productos asociados"
+        }
+    }
+}

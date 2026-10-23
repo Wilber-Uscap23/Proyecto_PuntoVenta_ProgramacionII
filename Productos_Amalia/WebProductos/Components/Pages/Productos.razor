@@ -1,0 +1,335 @@
+@page "/productos"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@inject ProductosService ServicioProductos
+@inject MarcasService ServicioMarcas
+@inject IJSRuntime JS
+
+<PageTitle>Mantenimiento de Productos</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Mantenimiento de Productos</h1>
+    <a href="/marcas" class="btn btn-outline-primary">Ir a Marcas →</a>
+</div>
+
+@if (!string.IsNullOrEmpty(mensaje))
+{
+    <div class="alert alert-success">@mensaje</div>
+}
+@if (!string.IsNullOrEmpty(error))
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<div class="card mb-4">
+    <div class="card-header bg-primary text-white">
+        @(actual.IdProducto == 0 ? "Registrar nuevo producto" : $"Editando: {actual.Descripcion}")
+    </div>
+    <div class="card-body">
+        <EditForm Model="actual" OnValidSubmit="GuardarAsync">
+            <DataAnnotationsValidator />
+
+            <div class="row">
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">Código *</label>
+                    <InputText @bind-Value="actual.Codigo" class="form-control" />
+                    <ValidationMessage For="() => actual.Codigo" />
+                </div>
+                <div class="col-md-5 mb-3">
+                    <label class="form-label">Descripción *</label>
+                    <InputText @bind-Value="actual.Descripcion" class="form-control" />
+                    <ValidationMessage For="() => actual.Descripcion" />
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label">Marca *</label>
+                    <InputSelect @bind-Value="actual.IdMarca" class="form-select">
+                        <option value="0">-- Seleccione una marca --</option>
+                        @foreach (var m in marcas)
+                        {
+                            <option value="@m.IdMarca">@m.Nombre</option>
+                        }
+                    </InputSelect>
+                    <ValidationMessage For="() => actual.IdMarca" />
+                    <a href="/marcas" class="small">¿No encuentra la marca? Gestionar marcas</a>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">Precio de costo (Q) *</label>
+                    <InputNumber @bind-Value="actual.PrecioCosto" class="form-control" step="0.01" />
+                    <ValidationMessage For="() => actual.PrecioCosto" />
+                </div>
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">Precio de venta (Q)</label>
+                    <input class="form-control" value="@actual.PrecioVentaCalculado.ToString("N2")" readonly />
+                    <div class="form-text">Se calcula automáticamente: costo + 25 %.</div>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">Existencia *</label>
+                    <InputNumber @bind-Value="actual.Existencia" class="form-control" />
+                    <ValidationMessage For="() => actual.Existencia" />
+                </div>
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">Fecha de ingreso *</label>
+                    <InputDate @bind-Value="actual.FechaIngreso" class="form-control" />
+                    <ValidationMessage For="() => actual.FechaIngreso" />
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-8 mb-3">
+                    <label class="form-label">Imagen del producto (JPG, PNG, GIF o WEBP, máx. 5 MB)</label>
+                    <InputFile @key="claveArchivo" OnChange="AlSeleccionarArchivo" class="form-control"
+                               accept=".jpg,.jpeg,.png,.gif,.webp" />
+                    @if (archivo is not null)
+                    {
+                        <div class="form-text">Se subirá al guardar: @archivo.Name (@(archivo.Size / 1024) KB)</div>
+                    }
+                </div>
+                <div class="col-md-2 mb-3 d-flex align-items-end">
+                    <div class="form-check">
+                        <InputCheckbox @bind-Value="actual.Estado" class="form-check-input" id="estadoProducto" />
+                        <label class="form-check-label" for="estadoProducto">Activo</label>
+                    </div>
+                </div>
+                <div class="col-md-2 mb-3">
+                    @if (ServicioProductos.UrlImagen(actual.ImagenUrl) is { } urlActual)
+                    {
+                        <img src="@urlActual" alt="Imagen actual" class="img-thumbnail" style="max-height:90px;" />
+                    }
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-success" disabled="@guardando">Guardar producto</button>
+            @if (actual.IdProducto != 0)
+            {
+                <button type="button" class="btn btn-secondary ms-2" @onclick="Nuevo">Cancelar</button>
+            }
+        </EditForm>
+    </div>
+</div>
+
+<div class="row g-2 mb-3">
+    <div class="col-md-6">
+        <input class="form-control" placeholder="Buscar por código, descripción o marca..."
+               @bind="buscar" @bind:event="oninput" @onkeydown="AlPresionarTecla" />
+    </div>
+    <div class="col-md-3">
+        <select class="form-select" @bind="filtroMarca">
+            <option value="0">Todas las marcas</option>
+            @foreach (var m in marcas)
+            {
+                <option value="@m.IdMarca">@m.Nombre</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-3 d-flex gap-2">
+        <button class="btn btn-outline-secondary" @onclick="CargarProductosAsync">Buscar</button>
+        <button class="btn btn-outline-secondary" @onclick="LimpiarBusquedaAsync">Limpiar</button>
+    </div>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-striped align-middle">
+        <thead>
+            <tr>
+                <th>Imagen</th><th>Código</th><th>Descripción</th><th>Marca</th>
+                <th class="text-end">Costo</th><th class="text-end">Venta</th>
+                <th class="text-end">Existencia</th><th>Ingreso</th><th class="text-end">Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (lista is null)
+            {
+                <tr><td colspan="9">Cargando productos...</td></tr>
+            }
+            else if (lista.Count == 0)
+            {
+                <tr><td colspan="9" class="text-muted">No hay productos para mostrar.</td></tr>
+            }
+            else
+            {
+                @foreach (var p in lista)
+                {
+                    <tr class="@(p.Estado ? "" : "table-secondary")">
+                        <td>
+                            @if (ServicioProductos.UrlImagen(p.ImagenUrl) is { } url)
+                            {
+                                <img src="@url" alt="@p.Descripcion" class="rounded"
+                                     style="width:56px;height:56px;object-fit:cover;" />
+                            }
+                            else
+                            {
+                                <span class="text-muted small">Sin imagen</span>
+                            }
+                        </td>
+                        <td>@p.Codigo</td>
+                        <td>@p.Descripcion</td>
+                        <td>@p.NombreMarca</td>
+                        <td class="text-end">Q @p.PrecioCosto.ToString("N2")</td>
+                        <td class="text-end">Q @p.PrecioVenta.ToString("N2")</td>
+                        <td class="text-end">@p.Existencia</td>
+                        <td>@p.FechaIngreso.ToString("dd/MM/yyyy")</td>
+                        <td class="text-end text-nowrap">
+                            <button class="btn btn-warning btn-sm me-1" @onclick="() => Editar(p)">Editar</button>
+                            <button class="btn btn-danger btn-sm" @onclick="() => EliminarAsync(p)">Eliminar</button>
+                        </td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private List<ProductoDto>? lista;
+    private List<MarcaDto> marcas = new();
+    private ProductoDto actual = new();
+    private IBrowserFile? archivo;
+    private int claveArchivo;          // al cambiarla, el <InputFile> se limpia
+    private int filtroMarca;
+    private string? buscar, mensaje, error;
+    private bool guardando;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var rm = await ServicioMarcas.ListarAsync();
+        if (rm.Ok) marcas = rm.Datos ?? new(); else error = rm.Error;
+
+        await CargarProductosAsync();
+    }
+
+    private async Task CargarProductosAsync()
+    {
+        var r = await ServicioProductos.ListarAsync(buscar, filtroMarca);
+        if (r.Ok)
+        {
+            lista = r.Datos ?? new();
+        }
+        else
+        {
+            lista ??= new();
+            error = r.Error;
+        }
+    }
+
+    private async Task AlPresionarTecla(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await CargarProductosAsync();
+    }
+
+    private async Task LimpiarBusquedaAsync()
+    {
+        buscar = null;
+        filtroMarca = 0;
+        await CargarProductosAsync();
+    }
+
+    private void AlSeleccionarArchivo(InputFileChangeEventArgs e)
+    {
+        error = null;
+        var elegido = e.File;
+
+        if (elegido.Size > ApiCliente.TamanoMaximoImagen)
+        {
+            error = "La imagen no puede pesar más de 5 MB.";
+            archivo = null;
+            claveArchivo++;
+            return;
+        }
+
+        var tiposPermitidos = new[] { "image/jpeg", "image/png", "image/gif", "image/webp" };
+        if (!tiposPermitidos.Contains(elegido.ContentType))
+        {
+            error = "Formato no permitido. Use JPG, PNG, GIF o WEBP.";
+            archivo = null;
+            claveArchivo++;
+            return;
+        }
+
+        archivo = elegido;
+    }
+
+    private async Task GuardarAsync()
+    {
+        mensaje = error = null;
+        guardando = true;
+
+        var esNuevo = actual.IdProducto == 0;
+        var r = await ServicioProductos.GuardarAsync(actual);
+
+        if (!r.Ok)
+        {
+            guardando = false;
+            error = r.Error;   // se conserva el formulario para que el usuario corrija
+            return;
+        }
+
+        var guardado = r.Datos!;
+
+        // La imagen se sube DESPUÉS de guardar el producto (ya existe su id). La API guarda solo la ruta.
+        if (archivo is not null)
+        {
+            var ri = await ServicioProductos.SubirImagenAsync(guardado.IdProducto, archivo);
+            if (!ri.Ok)
+            {
+                guardando = false;
+                error = $"El producto se guardó, pero la imagen no se pudo subir: {ri.Error}";
+                Editar(guardado);
+                await CargarProductosAsync();
+                return;
+            }
+        }
+
+        guardando = false;
+        mensaje = esNuevo ? "Producto registrado correctamente." : "Producto actualizado correctamente.";
+        Nuevo();
+        await CargarProductosAsync();
+    }
+
+    private void Editar(ProductoDto p)
+    {
+        mensaje = null;
+        archivo = null;
+        claveArchivo++;
+        actual = new ProductoDto
+        {
+            IdProducto = p.IdProducto,
+            Codigo = p.Codigo,
+            Descripcion = p.Descripcion,
+            IdMarca = p.IdMarca,
+            NombreMarca = p.NombreMarca,
+            PrecioCosto = p.PrecioCosto,
+            PrecioVenta = p.PrecioVenta,
+            Existencia = p.Existencia,
+            FechaIngreso = p.FechaIngreso,
+            ImagenUrl = p.ImagenUrl,
+            Estado = p.Estado
+        };
+    }
+
+    private void Nuevo()
+    {
+        actual = new ProductoDto();
+        archivo = null;
+        claveArchivo++;
+    }
+
+    private async Task EliminarAsync(ProductoDto p)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"¿Eliminar el producto '{p.Descripcion}'?")) return;
+
+        mensaje = error = null;
+        var r = await ServicioProductos.EliminarAsync(p.IdProducto);
+        if (r.Ok)
+        {
+            mensaje = "Producto eliminado.";
+            if (actual.IdProducto == p.IdProducto) Nuevo();
+            await CargarProductosAsync();
+        }
+        else
+        {
+            error = r.Error;   // ej. "tiene compras o ventas registradas"
+        }
+    }
+}
