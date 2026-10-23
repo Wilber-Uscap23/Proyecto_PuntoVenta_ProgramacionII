@@ -1,0 +1,21 @@
+# Compilación
+bin/
+obj/
+publish/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# Comprimidos y copias (NUNCA subir copias de proyectos de otros compañeros)
+*.rar
+*.zip
+*.7z
+
+# Imágenes subidas durante las pruebas (cada equipo/servidor tiene las suyas)
+ApiProductos/wwwroot/images/productos/*
+!ApiProductos/wwwroot/images/productos/.gitkeep
+
+# Secretos locales
+appsettings.Local.json
