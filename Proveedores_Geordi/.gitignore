@@ -1,0 +1,11 @@
+## Visual Studio / .NET
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.rsuser
+publish/
+PublishOutput/
+*.pubxml.user
+logs/

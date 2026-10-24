@@ -1,0 +1,42 @@
+### Pruebas rápidas del módulo de Rodrigo (Visual Studio: clic en "Send request")
+@api = http://localhost:5157
+
+### 1) Salud (no necesita token) — úsenlo también desde la otra VM: http://IP_DEL_SERVIDOR:8080/api/salud
+GET {{api}}/api/salud
+
+### 2) Login (base de integración / Wilber) — copien el "token" de la respuesta
+POST {{api}}/api/auth/login
+Content-Type: application/json
+
+{ "usuario": "admin", "password": "Admin123!" }
+
+### Pegar aquí el token
+@token = PEGAR_TOKEN
+
+### 3) Menú dinámico (árbol)
+GET {{api}}/api/menu
+Authorization: Bearer {{token}}
+
+### 4) Menú (lista plana, incluye inactivos)
+GET {{api}}/api/menu/lista
+Authorization: Bearer {{token}}
+
+### 5) Combos de filtros
+GET {{api}}/api/reportes/filtros
+Authorization: Bearer {{token}}
+
+### 6) Reporte de productos
+GET {{api}}/api/reportes/productos?estado=todos
+Authorization: Bearer {{token}}
+
+### 7) Reporte de existencias (stock mínimo 5)
+GET {{api}}/api/reportes/existencias?stockMinimo=5&soloBajas=false
+Authorization: Bearer {{token}}
+
+### 8) Reporte de compras de octubre 2026
+GET {{api}}/api/reportes/compras?desde=2026-10-01&hasta=2026-10-31&estado=todas
+Authorization: Bearer {{token}}
+
+### 9) Reporte de ventas de octubre 2026
+GET {{api}}/api/reportes/ventas?desde=2026-10-01&hasta=2026-10-31&estado=todas
+Authorization: Bearer {{token}}

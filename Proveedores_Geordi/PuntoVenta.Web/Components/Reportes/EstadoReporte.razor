@@ -1,0 +1,32 @@
+@* Módulo: Reportes — Rodrigo Rodríguez
+   Muestra "cargando", el error o el aviso de "sin resultados". *@
+@inject NavigationManager Navigation
+
+@if (Cargando)
+{
+    <div class="d-flex align-items-center text-muted my-4">
+        <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Generando reporte…
+    </div>
+}
+else if (Error is not null)
+{
+    <div class="alert alert-danger d-flex align-items-center justify-content-between gap-2" role="alert">
+        <span><span class="bi bi-exclamation-triangle me-2" aria-hidden="true"></span>@Error.Message</span>
+        @if (Error.SinAutorizacion)
+        {
+            <a class="btn btn-sm btn-danger" href="@UrlLogin">Iniciar sesión</a>
+        }
+    </div>
+}
+else if (SinResultados)
+{
+    <div class="alert alert-info" role="status">No hay registros que coincidan con los filtros seleccionados.</div>
+}
+
+@code {
+    [Parameter] public bool Cargando { get; set; }
+    [Parameter] public ApiException? Error { get; set; }
+    [Parameter] public bool SinResultados { get; set; }
+
+    private string UrlLogin => "login?regreso=" + Uri.EscapeDataString(Navigation.ToBaseRelativePath(Navigation.Uri));
+}

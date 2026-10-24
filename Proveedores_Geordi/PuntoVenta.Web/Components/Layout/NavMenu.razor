@@ -1,0 +1,122 @@
+﻿@* Módulo: Menú dinámico — Rodrigo Rodríguez
+   Las opciones NO están escritas aquí: se leen de la API (GET api/menu),
+   que a su vez las lee de la tabla `menu` de MySQL. *@
+@implements IDisposable
+@inject MenuService MenuService
+@inject SesionService Sesion
+@inject NavigationManager Navigation
+
+<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="">
+            <span class="bi bi-shop me-2" aria-hidden="true"></span>Punto de Venta
+        </a>
+    </div>
+</div>
+
+<input type="checkbox" title="Menú de navegación" class="navbar-toggler" @bind="menuAbierto" />
+
+<div class="nav-scrollable">
+    <nav class="nav flex-column py-2" aria-label="Menú principal">
+        @if (cargando)
+        {
+            <div class="menu-estado">
+                <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Cargando menú…
+            </div>
+        }
+        else if (error is not null)
+        {
+            <div class="menu-estado">
+                <div class="mb-2"><span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>@error</div>
+                <button type="button" class="btn btn-sm btn-outline-light" @onclick="CargarMenuAsync">
+                    <span class="bi bi-arrow-clockwise me-1" aria-hidden="true"></span>Reintentar
+                </button>
+            </div>
+        }
+        else if (opciones.Count == 0)
+        {
+            <div class="menu-estado">No hay opciones de menú disponibles.</div>
+        }
+        else
+        {
+            @foreach (var opcion in opciones)
+            {
+                <MenuNodo Item="opcion" Nivel="0" @key="opcion.IdMenu" />
+            }
+        }
+    </nav>
+</div>
+
+@code {
+    private List<MenuItemDto> opciones = new();
+    private bool cargando = true;
+    private string? error;
+    private bool menuAbierto;
+    private CancellationTokenSource? cts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Sesion.SesionCambio += AlCambiarSesion;
+        Navigation.LocationChanged += AlNavegar;
+        await CargarMenuAsync();
+    }
+
+    private async Task CargarMenuAsync()
+    {
+        cts?.Cancel();
+        cts = new CancellationTokenSource();
+        var token = cts.Token;
+
+        cargando = true;
+        error = null;
+
+        try
+        {
+            if (!await Sesion.EstaAutenticadoAsync())
+            {
+                opciones = new();
+                return;
+            }
+
+            opciones = await MenuService.ObtenerMenuAsync(token);
+        }
+        catch (ApiException ex)
+        {
+            opciones = new();
+            error = ex.SinAutorizacion ? null : ex.Message;
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            return; // se pidió una carga más nueva
+        }
+        finally
+        {
+            if (!token.IsCancellationRequested)
+            {
+                cargando = false;
+            }
+        }
+    }
+
+    // Al iniciar o cerrar sesión se vuelve a pedir el menú.
+    private void AlCambiarSesion() => _ = InvokeAsync(async () =>
+    {
+        await CargarMenuAsync();
+        StateHasChanged();
+    });
+
+    // En celulares el menú se cierra al elegir una opción.
+    private void AlNavegar(object? sender, LocationChangedEventArgs e) => _ = InvokeAsync(() =>
+    {
+        menuAbierto = false;
+        StateHasChanged();
+    });
+
+    public void Dispose()
+    {
+        Sesion.SesionCambio -= AlCambiarSesion;
+        Navigation.LocationChanged -= AlNavegar;
+        cts?.Cancel();
+        cts?.Dispose();
+    }
+}

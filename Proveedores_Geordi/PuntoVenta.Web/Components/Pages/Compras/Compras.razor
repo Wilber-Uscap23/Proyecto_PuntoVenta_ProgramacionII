@@ -1,0 +1,259 @@
+@* Módulo: Proveedores y Compras *@
+@page "/compras"
+@implements IDisposable
+@inject CompraService ComprasApi
+@inject ProveedorService ProveedoresApi
+
+<PageTitle>Compras</PageTitle>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <h1 class="h3 mb-0">Compras</h1>
+    <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-outline-secondary" href="/proveedores">
+            <span class="bi bi-truck me-1" aria-hidden="true"></span>Ir a Proveedores
+        </a>
+        <a class="btn btn-primary" href="/compras/nueva">
+            <span class="bi bi-plus-lg me-1" aria-hidden="true"></span>Nueva compra
+        </a>
+    </div>
+</div>
+
+@if (Creada is not null)
+{
+    <div class="alert alert-success" role="status">
+        La compra No. @Creada se registró correctamente: la existencia y los precios de los productos ya fueron actualizados.
+    </div>
+}
+@if (error is not null)
+{
+    <div class="alert alert-danger" role="alert">@error</div>
+}
+
+<form class="row g-2 align-items-end mb-3" @onsubmit="BuscarAsync" @onsubmit:preventDefault>
+    <div class="col-6 col-md-2">
+        <label class="form-label" for="desde">Desde</label>
+        <input id="desde" type="date" class="form-control" @bind="desde" />
+    </div>
+    <div class="col-6 col-md-2">
+        <label class="form-label" for="hasta">Hasta</label>
+        <input id="hasta" type="date" class="form-control @(rangoValido ? "" : "is-invalid")" @bind="hasta" />
+        <div class="invalid-feedback">Debe ser igual o mayor que "Desde".</div>
+    </div>
+    <div class="col-12 col-md-4">
+        <label class="form-label" for="proveedor">Proveedor</label>
+        <select id="proveedor" class="form-select" @bind="idProveedor">
+            <option value="">Todos</option>
+            @foreach (var p in proveedores)
+            {
+                <option value="@p.IdProveedor">@p.Nombre</option>
+            }
+        </select>
+    </div>
+    <div class="col-12 col-md-4 d-flex gap-2">
+        <button type="submit" class="btn btn-primary flex-grow-1" disabled="@cargando">
+            <span class="bi bi-search me-1" aria-hidden="true"></span>Buscar
+        </button>
+        <button type="button" class="btn btn-outline-secondary" @onclick="LimpiarAsync" disabled="@cargando">Limpiar</button>
+    </div>
+</form>
+
+@if (cargando)
+{
+    <p class="text-muted">Cargando compras...</p>
+}
+else if (compras.Count == 0)
+{
+    <p class="text-muted">No hay compras en el rango seleccionado.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th></th>
+                    <th>No.</th>
+                    <th>Fecha</th>
+                    <th>Proveedor</th>
+                    <th class="text-end">Artículos</th>
+                    <th class="text-end">Total</th>
+                    <th>Estado</th>
+                    <th>Observaciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var c in compras)
+                {
+                    var abierta = abiertas.Contains(c.IdCompra);
+                    <tr @key="c.IdCompra" class="@(c.Estado == EstadoMovimiento.Anulada ? "text-muted" : null)">
+                        <td>
+                            <button type="button" class="btn btn-sm btn-link p-0" title="Ver detalle"
+                                    aria-expanded="@(abierta ? "true" : "false")" @onclick="() => AlternarAsync(c.IdCompra)">
+                                <span class="bi @(abierta ? "bi-chevron-down" : "bi-chevron-right")" aria-hidden="true"></span>
+                            </button>
+                        </td>
+                        <td>@c.IdCompra</td>
+                        <td>@Formato.FechaHora(c.Fecha)</td>
+                        <td>@c.Proveedor</td>
+                        <td class="text-end">@Formato.Numero(c.CantidadArticulos)</td>
+                        <td class="text-end">@Formato.Moneda(c.Total)</td>
+                        <td>
+                            <span class="badge @(c.Estado == EstadoMovimiento.Anulada ? "text-bg-secondary" : "text-bg-success")">@c.Estado</span>
+                        </td>
+                        <td>@c.Observaciones</td>
+                    </tr>
+                    @if (abierta)
+                    {
+                        <tr>
+                            <td></td>
+                            <td colspan="7">
+                                @if (!detalles.TryGetValue(c.IdCompra, out var detalle))
+                                {
+                                    <span class="text-muted">Cargando detalle...</span>
+                                }
+                                else
+                                {
+                                    <table class="table table-sm mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Código</th>
+                                                <th>Producto</th>
+                                                <th class="text-end">Cantidad</th>
+                                                <th class="text-end">Precio costo</th>
+                                                <th class="text-end">Subtotal</th>
+                                                <th class="text-end">Precio venta actual</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var l in detalle.Lineas)
+                                            {
+                                                <tr>
+                                                    <td>@l.Codigo</td>
+                                                    <td>@l.Descripcion</td>
+                                                    <td class="text-end">@Formato.Numero(l.Cantidad)</td>
+                                                    <td class="text-end">@Formato.Moneda(l.PrecioCosto)</td>
+                                                    <td class="text-end">@Formato.Moneda(l.Subtotal)</td>
+                                                    <td class="text-end">@Formato.Moneda(l.PrecioVentaActual)</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                }
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+            <tfoot class="table-light fw-semibold">
+                <tr>
+                    <td colspan="5">Total (sin anuladas)</td>
+                    <td class="text-end">@Formato.Moneda(compras.Where(c => c.Estado == EstadoMovimiento.Registrada).Sum(c => c.Total))</td>
+                    <td colspan="2"></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "creada")] public int? Creada { get; set; }
+
+    private List<CompraListadoDto> compras = [];
+    private List<ProveedorDto> proveedores = [];
+    private readonly Dictionary<int, CompraDetalleDto> detalles = new();
+    private readonly HashSet<int> abiertas = new();
+    private string? error;
+    private bool cargando = true;
+    private CancellationTokenSource? cts;
+
+    private DateTime? desde = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private DateTime? hasta = DateTime.Today;
+    private int? idProveedor;
+
+    private bool rangoValido => desde is null || hasta is null || desde.Value.Date <= hasta.Value.Date;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            proveedores = await ProveedoresApi.ListarAsync(null, "todos");
+        }
+        catch (ApiException ex)
+        {
+            error = ex.Message;
+            cargando = false;
+            return;
+        }
+        await BuscarAsync();
+    }
+
+    private async Task BuscarAsync()
+    {
+        if (!rangoValido)
+        {
+            return;
+        }
+
+        cts?.Cancel();
+        cts = new CancellationTokenSource();
+        var token = cts.Token;
+
+        cargando = true;
+        error = null;
+        abiertas.Clear();
+        try
+        {
+            compras = await ComprasApi.ListarAsync(desde, hasta, idProveedor, token);
+        }
+        catch (ApiException ex)
+        {
+            error = ex.Message;
+            compras = [];
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            return;
+        }
+        finally
+        {
+            if (!token.IsCancellationRequested)
+            {
+                cargando = false;
+            }
+        }
+    }
+
+    private async Task LimpiarAsync()
+    {
+        desde = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+        hasta = DateTime.Today;
+        idProveedor = null;
+        await BuscarAsync();
+    }
+
+    private async Task AlternarAsync(int idCompra)
+    {
+        if (!abiertas.Remove(idCompra))
+        {
+            abiertas.Add(idCompra);
+            if (!detalles.ContainsKey(idCompra))
+            {
+                try
+                {
+                    detalles[idCompra] = await ComprasApi.ObtenerAsync(idCompra);
+                }
+                catch (ApiException ex)
+                {
+                    error = ex.Message;
+                    abiertas.Remove(idCompra);
+                }
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        cts?.Cancel();
+        cts?.Dispose();
+    }
+}

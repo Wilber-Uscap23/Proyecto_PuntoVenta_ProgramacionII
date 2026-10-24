@@ -1,0 +1,67 @@
+﻿@* BASE DE INTEGRACIÓN — el layout real lo define el equipo/Wilber.
+   Para el módulo de Rodrigo lo único importante es que el layout use <NavMenu />. *@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject SesionService Sesion
+@inject NavigationManager Navigation
+
+<div class="page">
+    <div class="sidebar">
+        <NavMenu />
+    </div>
+
+    <main>
+        <div class="top-row px-4">
+            @if (autenticado)
+            {
+                <span class="me-3 text-muted"><span class="bi bi-person-circle me-1" aria-hidden="true"></span>@(Sesion.NombreEmpleado ?? Sesion.Usuario)</span>
+                <button type="button" class="btn btn-link" @onclick="CerrarSesionAsync">
+                    <span class="bi bi-box-arrow-right me-1" aria-hidden="true"></span>Cerrar sesión
+                </button>
+            }
+        </div>
+
+        <article class="content px-4">
+            @if (autenticado)
+            {
+                @Body
+            }
+        </article>
+    </main>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    Ocurrió un error inesperado.
+    <a href="." class="reload">Recargar</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    private bool autenticado;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Sesion.SesionCambio += AlCambiarSesion;
+        await VerificarSesionAsync();
+    }
+
+    private async Task VerificarSesionAsync()
+    {
+        autenticado = await Sesion.EstaAutenticadoAsync();
+        if (!autenticado)
+        {
+            var regreso = Uri.EscapeDataString(Navigation.ToBaseRelativePath(Navigation.Uri));
+            Navigation.NavigateTo($"login?regreso={regreso}");
+        }
+    }
+
+    private async Task CerrarSesionAsync() => await Sesion.CerrarAsync();
+
+    private void AlCambiarSesion() => _ = InvokeAsync(async () =>
+    {
+        await VerificarSesionAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => Sesion.SesionCambio -= AlCambiarSesion;
+}

@@ -1,0 +1,360 @@
+@* Módulo: Proveedores y Compras — pantalla Maestro/Detalle *@
+@page "/compras/nueva"
+@inject CompraService ComprasApi
+@inject ProveedorService ProveedoresApi
+@inject NavigationManager Navegacion
+
+<PageTitle>Nueva compra</PageTitle>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <h1 class="h3 mb-0">Nueva compra</h1>
+    <a class="btn btn-outline-secondary" href="/compras">
+        <span class="bi bi-arrow-left me-1" aria-hidden="true"></span>Volver al listado
+    </a>
+</div>
+
+@if (error is not null)
+{
+    <div class="alert alert-danger" role="alert">@error</div>
+}
+
+@* ======================= MAESTRO: proveedor y observaciones ======================= *@
+<div class="card mb-3">
+    <div class="card-header fw-semibold">Datos de la compra</div>
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-12 col-md-6">
+                <label class="form-label" for="proveedor">Proveedor *</label>
+                <select id="proveedor" class="form-select" @bind="idProveedor" disabled="@guardando">
+                    <option value="">— Seleccione un proveedor —</option>
+                    @foreach (var p in proveedores)
+                    {
+                        <option value="@p.IdProveedor">@p.Nombre@(string.IsNullOrEmpty(p.Nit) ? "" : $" (NIT {p.Nit})")</option>
+                    }
+                </select>
+            </div>
+            <div class="col-12 col-md-6 d-flex flex-wrap gap-2">
+                <a class="btn btn-outline-primary" href="@UrlNuevoProveedor">
+                    <span class="bi bi-plus-lg me-1" aria-hidden="true"></span>Nuevo proveedor
+                </a>
+                <a class="btn btn-outline-secondary" href="@UrlProveedores">
+                    <span class="bi bi-truck me-1" aria-hidden="true"></span>Administrar proveedores
+                </a>
+            </div>
+            <div class="col-12">
+                <label class="form-label" for="observaciones">Observaciones</label>
+                <input id="observaciones" class="form-control" maxlength="255" @bind="observaciones" disabled="@guardando" />
+            </div>
+        </div>
+    </div>
+</div>
+
+@* ======================= DETALLE: agregar productos ======================= *@
+<div class="card mb-3">
+    <div class="card-header fw-semibold">Productos</div>
+    <div class="card-body">
+        <form class="row g-2 align-items-end" @onsubmit="BuscarProductosAsync" @onsubmit:preventDefault>
+            <div class="col-12 col-md-5">
+                <label class="form-label" for="buscarProducto">Buscar producto</label>
+                <div class="input-group">
+                    <input id="buscarProducto" class="form-control" maxlength="100" placeholder="Código o descripción"
+                           @bind="textoBusqueda" disabled="@guardando" />
+                    <button type="submit" class="btn btn-outline-primary" disabled="@(buscandoProductos || guardando)">
+                        <span class="bi bi-search" aria-hidden="true"></span><span class="visually-hidden">Buscar</span>
+                    </button>
+                </div>
+            </div>
+            <div class="col-12 col-md-7">
+                <label class="form-label" for="productoSel">Resultados</label>
+                <select id="productoSel" class="form-select" @bind="idProductoSel" @bind:after="AlSeleccionarProducto"
+                        disabled="@(resultados.Count == 0 || guardando)">
+                    <option value="">@(resultados.Count == 0 ? "Busque un producto para ver resultados" : "— Seleccione un producto —")</option>
+                    @foreach (var r in resultados)
+                    {
+                        <option value="@r.IdProducto">@r.Codigo · @r.Descripcion (@r.Marca) — existencia: @r.Existencia</option>
+                    }
+                </select>
+            </div>
+        </form>
+
+        @if (productoSel is not null)
+        {
+            <div class="row g-2 align-items-end mt-1">
+                <div class="col-6 col-md-3">
+                    <label class="form-label" for="cantidadNueva">Cantidad</label>
+                    <input id="cantidadNueva" type="number" min="1" step="1" class="form-control" @bind="cantidadNueva" />
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="form-label" for="costoNuevo">Precio de costo</label>
+                    <input id="costoNuevo" type="number" min="0.01" step="0.01" class="form-control" @bind="costoNuevo" />
+                </div>
+                <div class="col-12 col-md-4">
+                    <div class="form-text mb-1">
+                        Costo actual: @Formato.Moneda(productoSel.PrecioCosto) · Venta actual: @Formato.Moneda(productoSel.PrecioVenta)
+                    </div>
+                    <div class="form-text">Nuevo precio de venta (+25 %): <strong>@Formato.Moneda(PrecioVenta(costoNuevo))</strong></div>
+                </div>
+                <div class="col-12 col-md-2">
+                    <button type="button" class="btn btn-primary w-100" @onclick="AgregarLinea">
+                        <span class="bi bi-plus-lg me-1" aria-hidden="true"></span>Agregar
+                    </button>
+                </div>
+            </div>
+        }
+
+        @if (errorLinea is not null)
+        {
+            <div class="text-danger small mt-2" role="alert">@errorLinea</div>
+        }
+
+        @if (lineas.Count == 0)
+        {
+            <p class="text-muted mt-3 mb-0">Todavía no hay productos en esta compra.</p>
+        }
+        else
+        {
+            <div class="table-responsive mt-3">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Código</th>
+                            <th>Producto</th>
+                            <th class="text-end" style="width:8rem">Cantidad</th>
+                            <th class="text-end" style="width:10rem">Precio costo</th>
+                            <th class="text-end">Subtotal</th>
+                            <th class="text-end">Precio venta (+25 %)</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var l in lineas)
+                        {
+                            <tr @key="l.IdProducto">
+                                <td>@l.Codigo</td>
+                                <td>@l.Descripcion</td>
+                                <td>
+                                    <input type="number" min="1" step="1" class="form-control form-control-sm text-end"
+                                           aria-label="Cantidad de @l.Descripcion" @bind="l.Cantidad" disabled="@guardando" />
+                                </td>
+                                <td>
+                                    <input type="number" min="0.01" step="0.01" class="form-control form-control-sm text-end"
+                                           aria-label="Precio de costo de @l.Descripcion" @bind="l.PrecioCosto" disabled="@guardando" />
+                                </td>
+                                <td class="text-end">@Formato.Moneda(Subtotal(l))</td>
+                                <td class="text-end">@Formato.Moneda(PrecioVenta(l.PrecioCosto))</td>
+                                <td class="text-end">
+                                    <button type="button" class="btn btn-sm btn-outline-danger" title="Quitar"
+                                            @onclick="() => Quitar(l)" disabled="@guardando">
+                                        <span class="bi bi-x-lg" aria-hidden="true"></span><span class="visually-hidden">Quitar @l.Descripcion</span>
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                    <tfoot class="table-light fw-semibold">
+                        <tr>
+                            <td colspan="2">Total</td>
+                            <td class="text-end">@Formato.Numero(lineas.Sum(l => l.Cantidad))</td>
+                            <td></td>
+                            <td class="text-end">@Formato.Moneda(Total)</td>
+                            <td colspan="2"></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+<div class="d-flex gap-2">
+    <button type="button" class="btn btn-success" @onclick="GuardarAsync" disabled="@(guardando || lineas.Count == 0)">
+        <span class="bi bi-check-lg me-1" aria-hidden="true"></span>@(guardando ? "Guardando..." : "Guardar compra")
+    </button>
+    <a class="btn btn-outline-secondary @(guardando ? "disabled" : null)" href="/compras">Cancelar</a>
+</div>
+<p class="text-muted small mt-2">
+    Al guardar se suma la cantidad a la existencia, el precio de costo del producto se reemplaza por el de la compra
+    y el precio de venta se recalcula como costo + 25 %. Todo se guarda junto o no se guarda nada.
+</p>
+
+@code {
+    private const decimal Margen = 0.25m;
+
+    private sealed class Linea
+    {
+        public int IdProducto { get; init; }
+        public string Codigo { get; init; } = string.Empty;
+        public string Descripcion { get; init; } = string.Empty;
+        public int Cantidad { get; set; }
+        public decimal PrecioCosto { get; set; }
+    }
+
+    private List<ProveedorDto> proveedores = [];
+    private List<ProductoCompraDto> resultados = [];
+    private readonly List<Linea> lineas = [];
+
+    private int? idProveedor;
+    private string? observaciones;
+
+    private string? textoBusqueda;
+    private int? idProductoSel;
+    private ProductoCompraDto? productoSel;
+    private int cantidadNueva = 1;
+    private decimal costoNuevo;
+
+    private string? error;
+    private string? errorLinea;
+    private bool buscandoProductos;
+    private bool guardando;
+
+    private decimal Total => lineas.Sum(Subtotal);
+    private static decimal Subtotal(Linea l) => Math.Round(l.Cantidad * l.PrecioCosto, 2, MidpointRounding.AwayFromZero);
+    private static decimal PrecioVenta(decimal costo) => Math.Round(costo * (1 + Margen), 2, MidpointRounding.AwayFromZero);
+
+    private string UrlNuevoProveedor => "/proveedores?nuevo=true&volver=" + Uri.EscapeDataString("/compras/nueva");
+    private string UrlProveedores => "/proveedores?volver=" + Uri.EscapeDataString("/compras/nueva");
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            proveedores = await ProveedoresApi.ListarAsync(null, "activos");
+            resultados = await ComprasApi.BuscarProductosAsync(null);
+        }
+        catch (ApiException ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private async Task BuscarProductosAsync()
+    {
+        buscandoProductos = true;
+        errorLinea = null;
+        try
+        {
+            resultados = await ComprasApi.BuscarProductosAsync(textoBusqueda);
+            idProductoSel = null;
+            productoSel = null;
+            if (resultados.Count == 0)
+            {
+                errorLinea = "No se encontraron productos activos con ese criterio.";
+            }
+        }
+        catch (ApiException ex)
+        {
+            errorLinea = ex.Message;
+        }
+        finally
+        {
+            buscandoProductos = false;
+        }
+    }
+
+    private void AlSeleccionarProducto()
+    {
+        errorLinea = null;
+        productoSel = resultados.FirstOrDefault(r => r.IdProducto == idProductoSel);
+        if (productoSel is not null)
+        {
+            cantidadNueva = 1;
+            costoNuevo = productoSel.PrecioCosto > 0 ? productoSel.PrecioCosto : 0m;
+        }
+    }
+
+    private void AgregarLinea()
+    {
+        errorLinea = null;
+        if (productoSel is null)
+        {
+            errorLinea = "Seleccione un producto.";
+            return;
+        }
+        if (cantidadNueva <= 0)
+        {
+            errorLinea = "La cantidad debe ser mayor que 0.";
+            return;
+        }
+        if (costoNuevo <= 0)
+        {
+            errorLinea = "El precio de costo debe ser mayor que 0.";
+            return;
+        }
+
+        // Si el producto ya está en la lista: se suma la cantidad y se usa el costo más reciente.
+        var existente = lineas.FirstOrDefault(l => l.IdProducto == productoSel.IdProducto);
+        if (existente is not null)
+        {
+            existente.Cantidad += cantidadNueva;
+            existente.PrecioCosto = costoNuevo;
+        }
+        else
+        {
+            lineas.Add(new Linea
+            {
+                IdProducto = productoSel.IdProducto,
+                Codigo = productoSel.Codigo,
+                Descripcion = productoSel.Descripcion,
+                Cantidad = cantidadNueva,
+                PrecioCosto = costoNuevo
+            });
+        }
+
+        idProductoSel = null;
+        productoSel = null;
+    }
+
+    private void Quitar(Linea linea) => lineas.Remove(linea);
+
+    private async Task GuardarAsync()
+    {
+        if (guardando)
+        {
+            return;   // evita guardar dos veces con doble clic
+        }
+
+        error = null;
+        if (idProveedor is null)
+        {
+            error = "Debe seleccionar un proveedor.";
+            return;
+        }
+        if (lineas.Count == 0)
+        {
+            error = "Debe agregar al menos un producto.";
+            return;
+        }
+        if (lineas.Any(l => l.Cantidad <= 0 || l.PrecioCosto <= 0))
+        {
+            error = "Todas las líneas deben tener cantidad y precio de costo mayores que 0.";
+            return;
+        }
+
+        guardando = true;
+        try
+        {
+            var compra = new CompraCrearDto
+            {
+                IdProveedor = idProveedor.Value,
+                Observaciones = observaciones,
+                Detalles = lineas.Select(l => new CompraLineaCrearDto
+                {
+                    IdProducto = l.IdProducto,
+                    Cantidad = l.Cantidad,
+                    PrecioCosto = l.PrecioCosto
+                }).ToList()
+            };
+
+            var creada = await ComprasApi.CrearAsync(compra);
+            Navegacion.NavigateTo($"/compras?creada={creada.IdCompra}");
+        }
+        catch (ApiException ex)
+        {
+            error = ex.Message;   // la compra NO se guardó: la pantalla conserva todo para corregir
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+}

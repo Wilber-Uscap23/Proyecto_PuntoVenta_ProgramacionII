@@ -1,0 +1,33 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <ResourcePreloader />
+    <link rel="stylesheet" href="@Assets["lib/bootstrap/dist/css/bootstrap.min.css"]" />
+    @* Módulo de Rodrigo: íconos del menú (copia local, funciona sin Internet en las VM) *@
+    <link rel="stylesheet" href="@Assets["lib/bootstrap-icons/font/bootstrap-icons.min.css"]" />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    @* Módulo de Rodrigo: estilos de reportes e impresión *@
+    <link rel="stylesheet" href="@Assets["css/reportes.css"]" />
+    <link rel="stylesheet" href="@Assets["PuntoVenta.Web.styles.css"]" />
+    <ImportMap />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <HeadOutlet @rendermode="RenderModeServidor" />
+</head>
+
+<body>
+    <Routes @rendermode="RenderModeServidor" />
+    <ReconnectModal />
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+</body>
+
+</html>
+
+@code {
+    // Interactivo en el servidor y SIN prerenderizado: así el token guardado en
+    // ProtectedSessionStorage está disponible desde OnInitializedAsync.
+    private static readonly IComponentRenderMode RenderModeServidor = new InteractiveServerRenderMode(prerender: false);
+}

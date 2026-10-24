@@ -1,0 +1,351 @@
+@* Módulo: Proveedores y Compras *@
+@page "/proveedores"
+@implements IDisposable
+@inject ProveedorService ProveedoresApi
+@inject NavigationManager Navegacion
+
+<PageTitle>Proveedores</PageTitle>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <h1 class="h3 mb-0">Proveedores</h1>
+    <div class="d-flex flex-wrap gap-2">
+        @if (RutaVolver is not null)
+        {
+            <a class="btn btn-outline-primary" href="@RutaVolver">
+                <span class="bi bi-arrow-left me-1" aria-hidden="true"></span>Volver a la compra
+            </a>
+        }
+        <a class="btn btn-outline-secondary" href="/compras">
+            <span class="bi bi-bag me-1" aria-hidden="true"></span>Ir a Compras
+        </a>
+        <button type="button" class="btn btn-primary" @onclick="Nuevo" disabled="@guardando">
+            <span class="bi bi-plus-lg me-1" aria-hidden="true"></span>Nuevo proveedor
+        </button>
+    </div>
+</div>
+
+@if (mensajeOk is not null)
+{
+    <div class="alert alert-success alert-dismissible" role="status">
+        @mensajeOk
+        <button type="button" class="btn-close" aria-label="Cerrar" @onclick="() => mensajeOk = null"></button>
+    </div>
+}
+@if (errorGeneral is not null)
+{
+    <div class="alert alert-danger" role="alert">@errorGeneral</div>
+}
+
+@* ---------------- Formulario (crear / editar) ---------------- *@
+@if (formulario is not null)
+{
+    <div class="card mb-3">
+        <div class="card-header fw-semibold">
+            @(idEditando is null ? "Nuevo proveedor" : $"Editar proveedor #{idEditando}")
+        </div>
+        <div class="card-body">
+            <EditForm Model="formulario" OnValidSubmit="GuardarAsync" FormName="formProveedor">
+                <DataAnnotationsValidator />
+                <ValidationSummary class="text-danger" />
+
+                <div class="row g-3">
+                    <div class="col-12 col-md-6">
+                        <label class="form-label" for="pNombre">Nombre *</label>
+                        <InputText id="pNombre" class="form-control" @bind-Value="formulario.Nombre" maxlength="150" />
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <label class="form-label" for="pNit">NIT</label>
+                        <InputText id="pNit" class="form-control" @bind-Value="formulario.Nit" maxlength="20" />
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <label class="form-label" for="pTelefono">Teléfono</label>
+                        <InputText id="pTelefono" class="form-control" @bind-Value="formulario.Telefono" maxlength="20" />
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label" for="pCorreo">Correo</label>
+                        <InputText id="pCorreo" type="email" class="form-control" @bind-Value="formulario.Correo" maxlength="150" />
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label" for="pContacto">Persona de contacto</label>
+                        <InputText id="pContacto" class="form-control" @bind-Value="formulario.Contacto" maxlength="100" />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label" for="pDireccion">Dirección</label>
+                        <InputText id="pDireccion" class="form-control" @bind-Value="formulario.Direccion" maxlength="255" />
+                    </div>
+                    <div class="col-12">
+                        <div class="form-check">
+                            <InputCheckbox id="pEstado" class="form-check-input" @bind-Value="formulario.Estado" />
+                            <label class="form-check-label" for="pEstado">Activo (solo los activos aparecen al registrar una compra)</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-flex gap-2 mt-3">
+                    <button type="submit" class="btn btn-primary" disabled="@guardando">
+                        @(guardando ? "Guardando..." : "Guardar")
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" @onclick="Cancelar" disabled="@guardando">Cancelar</button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@* ---------------- Búsqueda ---------------- *@
+<form class="row g-2 align-items-end mb-3" @onsubmit="BuscarAsync" @onsubmit:preventDefault>
+    <div class="col-12 col-md-6">
+        <label class="form-label" for="buscar">Buscar</label>
+        <input id="buscar" class="form-control" maxlength="100" placeholder="Nombre, NIT, teléfono, correo o contacto"
+               @bind="buscar" />
+    </div>
+    <div class="col-6 col-md-3">
+        <label class="form-label" for="estadoFiltro">Estado</label>
+        <select id="estadoFiltro" class="form-select" @bind="estadoFiltro">
+            <option value="todos">Todos</option>
+            <option value="activos">Activos</option>
+            <option value="inactivos">Inactivos</option>
+        </select>
+    </div>
+    <div class="col-6 col-md-3 d-flex gap-2">
+        <button type="submit" class="btn btn-primary flex-grow-1" disabled="@cargando">
+            <span class="bi bi-search me-1" aria-hidden="true"></span>Buscar
+        </button>
+        <button type="button" class="btn btn-outline-secondary" @onclick="LimpiarAsync" disabled="@cargando">Limpiar</button>
+    </div>
+</form>
+
+@* ---------------- Listado ---------------- *@
+@if (cargando)
+{
+    <p class="text-muted">Cargando proveedores...</p>
+}
+else if (proveedores.Count == 0)
+{
+    <p class="text-muted">No se encontraron proveedores con esos criterios.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Nombre</th>
+                    <th>NIT</th>
+                    <th>Teléfono</th>
+                    <th>Correo</th>
+                    <th>Contacto</th>
+                    <th>Estado</th>
+                    <th class="text-end">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var p in proveedores)
+                {
+                    <tr @key="p.IdProveedor" class="@(p.Estado ? null : "text-muted")">
+                        <td>@p.Nombre</td>
+                        <td>@p.Nit</td>
+                        <td>@p.Telefono</td>
+                        <td>@p.Correo</td>
+                        <td>@p.Contacto</td>
+                        <td>
+                            <span class="badge @(p.Estado ? "text-bg-success" : "text-bg-secondary")">@(p.Estado ? "Activo" : "Inactivo")</span>
+                        </td>
+                        <td class="text-end text-nowrap">
+                            @if (idConfirmarEliminar == p.IdProveedor)
+                            {
+                                <span class="me-2">¿Eliminar?</span>
+                                <button type="button" class="btn btn-sm btn-danger" @onclick="() => EliminarAsync(p)" disabled="@guardando">Sí</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => idConfirmarEliminar = null">No</button>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn btn-sm btn-outline-primary" title="Editar" @onclick="() => Editar(p)" disabled="@guardando">
+                                    <span class="bi bi-pencil" aria-hidden="true"></span><span class="visually-hidden">Editar @p.Nombre</span>
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-danger" title="Eliminar" @onclick="() => idConfirmarEliminar = p.IdProveedor" disabled="@guardando">
+                                    <span class="bi bi-trash" aria-hidden="true"></span><span class="visually-hidden">Eliminar @p.Nombre</span>
+                                </button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <p class="text-muted small">@proveedores.Count proveedor(es)</p>
+}
+
+@code {
+    // Cuando se llega desde la pantalla de compras: /proveedores?volver=/compras/nueva
+    [SupplyParameterFromQuery(Name = "volver")] public string? Volver { get; set; }
+    [SupplyParameterFromQuery(Name = "nuevo")] public bool AbrirNuevo { get; set; }
+
+    private List<ProveedorDto> proveedores = [];
+    private ProveedorGuardarDto? formulario;
+    private int? idEditando;
+    private int? idConfirmarEliminar;
+    private string? buscar;
+    private string estadoFiltro = "todos";
+    private bool cargando = true;
+    private bool guardando;
+    private string? errorGeneral;
+    private string? mensajeOk;
+    private CancellationTokenSource? cts;
+
+    /// <summary>Solo se acepta una ruta interna (evita redirecciones a sitios externos).</summary>
+    private string? RutaVolver =>
+        !string.IsNullOrWhiteSpace(Volver) && Volver.StartsWith('/') && !Volver.StartsWith("//") ? Volver : null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AbrirNuevo)
+        {
+            Nuevo();
+        }
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        cts?.Cancel();
+        cts = new CancellationTokenSource();
+        var token = cts.Token;
+
+        cargando = true;
+        errorGeneral = null;
+        try
+        {
+            proveedores = await ProveedoresApi.ListarAsync(buscar, estadoFiltro, token);
+        }
+        catch (ApiException ex)
+        {
+            errorGeneral = ex.Message;
+            proveedores = [];
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            return;
+        }
+        finally
+        {
+            if (!token.IsCancellationRequested)
+            {
+                cargando = false;
+            }
+        }
+    }
+
+    private Task BuscarAsync() => CargarAsync();
+
+    private async Task LimpiarAsync()
+    {
+        buscar = null;
+        estadoFiltro = "todos";
+        await CargarAsync();
+    }
+
+    private void Nuevo()
+    {
+        idEditando = null;
+        formulario = new ProveedorGuardarDto();
+        mensajeOk = null;
+        errorGeneral = null;
+    }
+
+    private void Editar(ProveedorDto p)
+    {
+        idEditando = p.IdProveedor;
+        formulario = new ProveedorGuardarDto
+        {
+            Nombre = p.Nombre,
+            Nit = p.Nit,
+            Telefono = p.Telefono,
+            Correo = p.Correo,
+            Direccion = p.Direccion,
+            Contacto = p.Contacto,
+            Estado = p.Estado
+        };
+        mensajeOk = null;
+        errorGeneral = null;
+    }
+
+    private void Cancelar()
+    {
+        formulario = null;
+        idEditando = null;
+        errorGeneral = null;
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (formulario is null || guardando)
+        {
+            return;
+        }
+
+        guardando = true;
+        errorGeneral = null;
+        try
+        {
+            if (idEditando is null)
+            {
+                var creado = await ProveedoresApi.CrearAsync(formulario);
+                mensajeOk = $"Proveedor «{creado.Nombre}» creado correctamente.";
+            }
+            else
+            {
+                var actualizado = await ProveedoresApi.ActualizarAsync(idEditando.Value, formulario);
+                mensajeOk = $"Proveedor «{actualizado.Nombre}» actualizado correctamente.";
+            }
+            formulario = null;
+            idEditando = null;
+        }
+        catch (ApiException ex)
+        {
+            errorGeneral = ex.Message;   // el formulario queda abierto para corregir
+            return;
+        }
+        finally
+        {
+            guardando = false;
+        }
+
+        await CargarAsync();
+    }
+
+    private async Task EliminarAsync(ProveedorDto p)
+    {
+        if (guardando)
+        {
+            return;
+        }
+
+        guardando = true;
+        errorGeneral = null;
+        try
+        {
+            await ProveedoresApi.EliminarAsync(p.IdProveedor);
+            mensajeOk = $"Proveedor «{p.Nombre}» eliminado.";
+        }
+        catch (ApiException ex)
+        {
+            errorGeneral = ex.Message;
+            idConfirmarEliminar = null;
+            return;
+        }
+        finally
+        {
+            guardando = false;
+        }
+
+        idConfirmarEliminar = null;
+        await CargarAsync();
+    }
+
+    public void Dispose()
+    {
+        cts?.Cancel();
+        cts?.Dispose();
+    }
+}

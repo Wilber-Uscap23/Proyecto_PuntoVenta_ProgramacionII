@@ -1,0 +1,85 @@
+@* Módulo: Menú dinámico — Rodrigo Rodríguez
+   Dibuja UNA opción del menú. Si la opción tiene hijos se dibuja como grupo
+   desplegable y se llama a sí mismo para cada hijo (soporta N niveles). *@
+
+@if (Item.Hijos.Count == 0)
+{
+    <div class="nav-item px-3">
+        <NavLink class="nav-link" href="@Href" Match="@Coincidencia" style="@Sangria">
+            <span class="bi @Icono" aria-hidden="true"></span>
+            <span class="texto">@Item.Nombre</span>
+        </NavLink>
+    </div>
+}
+else
+{
+    <div class="nav-item px-3">
+        <button type="button" class="nav-link nav-grupo" style="@Sangria"
+                aria-expanded="@(abierto ? "true" : "false")" @onclick="Alternar">
+            <span class="bi @Icono" aria-hidden="true"></span>
+            <span class="texto">@Item.Nombre</span>
+            <span class="bi @(abierto ? "bi-chevron-down" : "bi-chevron-right") flecha" aria-hidden="true"></span>
+        </button>
+    </div>
+
+    @if (abierto)
+    {
+        <div class="nav-submenu" role="group" aria-label="@Item.Nombre">
+            @if (Item.Ruta is not null)
+            {
+                @* Una opción con ruta Y con hijos: primero el enlace a su propia página *@
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="@Href" Match="NavLinkMatch.All" style="@SangriaHijos">
+                        <span class="bi bi-arrow-return-right" aria-hidden="true"></span>
+                        <span class="texto">@Item.Nombre</span>
+                    </NavLink>
+                </div>
+            }
+            @foreach (var hijo in Item.Hijos)
+            {
+                <MenuNodo Item="hijo" Nivel="Nivel + 1" @key="hijo.IdMenu" />
+            }
+        </div>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public MenuItemDto Item { get; set; } = default!;
+
+    /// <summary>0 = primer nivel; sirve para la sangría de los submenús.</summary>
+    [Parameter]
+    public int Nivel { get; set; }
+
+    private bool abierto = true;
+
+    private void Alternar() => abierto = !abierto;
+
+    /// <summary>
+    /// Ruta relativa ("productos" en lugar de "/productos") para que funcione aunque el
+    /// sitio se publique en IIS dentro de una subcarpeta (ej. http://servidor/puntoventa/).
+    /// </summary>
+    private string Href => (Item.Ruta ?? string.Empty).Trim().TrimStart('/');
+
+    private NavLinkMatch Coincidencia => Href.Length == 0 ? NavLinkMatch.All : NavLinkMatch.Prefix;
+
+    private string Icono
+    {
+        get
+        {
+            var icono = Item.Icono?.Trim();
+            if (string.IsNullOrEmpty(icono))
+            {
+                return "bi-dot";
+            }
+            if (icono.StartsWith("bi ", StringComparison.Ordinal))
+            {
+                icono = icono[3..].Trim();
+            }
+            return icono.StartsWith("bi-", StringComparison.Ordinal) ? icono : "bi-" + icono;
+        }
+    }
+
+    private string? Sangria => Nivel == 0 ? null : $"padding-left: {0.75 + Nivel}rem;";
+    private string SangriaHijos => $"padding-left: {1.75 + Nivel}rem;";
+}

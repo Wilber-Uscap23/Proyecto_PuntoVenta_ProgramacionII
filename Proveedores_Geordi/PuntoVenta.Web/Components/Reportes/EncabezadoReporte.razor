@@ -1,0 +1,46 @@
+@* Módulo: Reportes — Rodrigo Rodríguez
+   Título del reporte + botones Imprimir / Exportar CSV. *@
+@inject ReporteJsService ReporteJs
+
+<div class="solo-impresion mb-2">
+    <strong>Sistema de Punto de Venta</strong>
+</div>
+
+<div class="reporte-encabezado">
+    <div>
+        <h1>@Titulo</h1>
+        @if (FechaGeneracion is not null)
+        {
+            <div class="reporte-generado">Generado el @Formato.FechaHora(FechaGeneracion.Value)@(string.IsNullOrWhiteSpace(Descripcion) ? "" : " · " + Descripcion)</div>
+        }
+    </div>
+    <div class="no-imprimir d-flex gap-2">
+        <button type="button" class="btn btn-outline-secondary" @onclick="ImprimirAsync" disabled="@(!HayDatos)">
+            <span class="bi bi-printer me-1" aria-hidden="true"></span>Imprimir / PDF
+        </button>
+        <button type="button" class="btn btn-outline-success" @onclick="ExportarAsync" disabled="@(!HayDatos)">
+            <span class="bi bi-filetype-csv me-1" aria-hidden="true"></span>Exportar CSV
+        </button>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Titulo { get; set; } = string.Empty;
+    [Parameter] public DateTime? FechaGeneracion { get; set; }
+
+    /// <summary>Resumen de los filtros aplicados (sale también en la impresión).</summary>
+    [Parameter] public string? Descripcion { get; set; }
+
+    [Parameter] public bool HayDatos { get; set; }
+
+    /// <summary>Nombre del archivo CSV sin extensión.</summary>
+    [Parameter, EditorRequired] public string NombreArchivo { get; set; } = "reporte";
+
+    /// <summary>Función que arma el contenido del CSV.</summary>
+    [Parameter, EditorRequired] public Func<string> GenerarCsv { get; set; } = default!;
+
+    private Task ImprimirAsync() => ReporteJs.ImprimirAsync();
+
+    private Task ExportarAsync()
+        => ReporteJs.DescargarCsvAsync($"{NombreArchivo}_{DateTime.Now:yyyyMMdd_HHmm}.csv", GenerarCsv());
+}

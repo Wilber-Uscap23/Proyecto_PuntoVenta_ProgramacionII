@@ -1,0 +1,248 @@
+@* Módulo: Reportes — Rodrigo Rodríguez *@
+@page "/reportes/compras"
+@implements IDisposable
+@inject ReporteService Reportes
+
+<PageTitle>Reporte de compras</PageTitle>
+
+<EncabezadoReporte Titulo="Reporte de compras"
+                   FechaGeneracion="reporte?.FechaGeneracion"
+                   Descripcion="@descripcionFiltros"
+                   HayDatos="@(reporte?.Compras.Count > 0)"
+                   NombreArchivo="reporte_compras"
+                   GenerarCsv="GenerarCsv" />
+
+<div class="reporte-filtros no-imprimir">
+    <form class="row g-2 align-items-end" @onsubmit="GenerarAsync" @onsubmit:preventDefault>
+        <div class="col-6 col-md-2">
+            <label class="form-label" for="desde">Desde</label>
+            <input id="desde" type="date" class="form-control" @bind="desde" />
+        </div>
+        <div class="col-6 col-md-2">
+            <label class="form-label" for="hasta">Hasta</label>
+            <input id="hasta" type="date" class="form-control @(rangoValido ? "" : "is-invalid")" @bind="hasta" />
+            <div class="invalid-feedback">Debe ser igual o mayor que "Desde".</div>
+        </div>
+        <div class="col-12 col-md-3">
+            <label class="form-label" for="proveedor">Proveedor</label>
+            <select id="proveedor" class="form-select" @bind="idProveedor">
+                <option value="">Todos</option>
+                @foreach (var proveedor in filtros.Proveedores)
+                {
+                    <option value="@proveedor.Id">@proveedor.Nombre</option>
+                }
+            </select>
+        </div>
+        <div class="col-6 col-md-2">
+            <label class="form-label" for="estado">Estado</label>
+            <select id="estado" class="form-select" @bind="estado">
+                <option value="todas">Todas</option>
+                <option value="@EstadoMovimiento.Registrada">Registradas</option>
+                <option value="@EstadoMovimiento.Anulada">Anuladas</option>
+            </select>
+        </div>
+        <div class="col-6 col-md-3 d-flex gap-2">
+            <button type="submit" class="btn btn-primary flex-grow-1" disabled="@cargando">
+                <span class="bi bi-search me-1" aria-hidden="true"></span>Generar
+            </button>
+            <button type="button" class="btn btn-outline-secondary" @onclick="LimpiarAsync" disabled="@cargando">Limpiar</button>
+        </div>
+        <div class="col-12">
+            <div class="form-check">
+                <input id="verDetalle" type="checkbox" class="form-check-input" @bind="mostrarTodoDetalle" />
+                <label class="form-check-label" for="verDetalle">Mostrar el detalle de productos de todas las compras</label>
+            </div>
+        </div>
+    </form>
+</div>
+
+<EstadoReporte Cargando="cargando" Error="error" SinResultados="@(reporte is not null && reporte.Compras.Count == 0)" />
+
+@if (!cargando && error is null && reporte is { Compras.Count: > 0 })
+{
+    <div class="reporte-resumen">
+        <TarjetaResumen Titulo="Compras registradas" Valor="@Formato.Numero(reporte.CantidadCompras)" />
+        <TarjetaResumen Titulo="Total comprado" Valor="@Formato.Moneda(reporte.TotalComprado)" />
+        <TarjetaResumen Titulo="Compras anuladas" Valor="@Formato.Numero(reporte.CantidadAnuladas)" />
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle reporte-tabla">
+            <thead class="table-light">
+                <tr>
+                    <th class="no-imprimir"></th>
+                    <th>No.</th>
+                    <th>Fecha</th>
+                    <th>Proveedor</th>
+                    <th>NIT</th>
+                    <th class="num">Artículos</th>
+                    <th class="num">Total</th>
+                    <th>Estado</th>
+                    <th>Observaciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var c in reporte.Compras)
+                {
+                    var abierto = mostrarTodoDetalle || abiertos.Contains(c.IdCompra);
+                    <tr @key="c.IdCompra" class="@(c.Estado == EstadoMovimiento.Anulada ? "fila-anulada" : null)">
+                        <td class="no-imprimir">
+                            <button type="button" class="btn btn-sm btn-link p-0" title="Ver detalle"
+                                    aria-expanded="@(abierto ? "true" : "false")" @onclick="() => Alternar(c.IdCompra)">
+                                <span class="bi @(abierto ? "bi-chevron-down" : "bi-chevron-right")" aria-hidden="true"></span>
+                            </button>
+                        </td>
+                        <td>@c.IdCompra</td>
+                        <td>@Formato.FechaHora(c.Fecha)</td>
+                        <td>@c.Proveedor</td>
+                        <td>@c.NitProveedor</td>
+                        <td class="num">@Formato.Numero(c.CantidadArticulos)</td>
+                        <td class="num">@Formato.Moneda(c.Total)</td>
+                        <td>
+                            <span class="badge @(c.Estado == EstadoMovimiento.Anulada ? "text-bg-secondary" : "text-bg-success")">@c.Estado</span>
+                        </td>
+                        <td>@c.Observaciones</td>
+                    </tr>
+                    @if (abierto)
+                    {
+                        <tr class="detalle">
+                            <td class="no-imprimir"></td>
+                            <td colspan="8">
+                                <DetalleMovimiento Lineas="c.Detalle" EtiquetaPrecio="Precio costo" />
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+            <tfoot class="table-light fw-semibold">
+                <tr>
+                    <td class="no-imprimir"></td>
+                    <td colspan="5">Total comprado (sin anuladas)</td>
+                    <td class="num">@Formato.Moneda(reporte.TotalComprado)</td>
+                    <td colspan="2"></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+}
+
+@code {
+    private FiltrosReporteDto filtros = new();
+    private ReporteComprasDto? reporte;
+    private ApiException? error;
+    private bool cargando = true;
+    private string? descripcionFiltros;
+    private CancellationTokenSource? cts;
+    private readonly HashSet<int> abiertos = new();
+    private bool mostrarTodoDetalle;
+
+    // Filtros (por defecto: el mes actual)
+    private DateTime? desde = PrimerDiaDelMes();
+    private DateTime? hasta = DateTime.Today;
+    private int? idProveedor;
+    private string estado = "todas";
+
+    private bool rangoValido => desde is null || hasta is null || desde.Value.Date <= hasta.Value.Date;
+
+    private static DateTime PrimerDiaDelMes() => new(DateTime.Today.Year, DateTime.Today.Month, 1);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            filtros = await Reportes.ObtenerFiltrosAsync();
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+            cargando = false;
+            return;
+        }
+        await GenerarAsync();
+    }
+
+    private async Task GenerarAsync()
+    {
+        if (!rangoValido)
+        {
+            return;
+        }
+
+        cts?.Cancel();
+        cts = new CancellationTokenSource();
+        var token = cts.Token;
+
+        cargando = true;
+        error = null;
+        abiertos.Clear();
+        try
+        {
+            reporte = await Reportes.ComprasAsync(desde, hasta, idProveedor, estado, token);
+            descripcionFiltros = DescribirFiltros();
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+            reporte = null;
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            return;
+        }
+        finally
+        {
+            if (!token.IsCancellationRequested)
+            {
+                cargando = false;
+            }
+        }
+    }
+
+    private async Task LimpiarAsync()
+    {
+        desde = PrimerDiaDelMes();
+        hasta = DateTime.Today;
+        idProveedor = null;
+        estado = "todas";
+        await GenerarAsync();
+    }
+
+    private void Alternar(int idCompra)
+    {
+        if (!abiertos.Remove(idCompra))
+        {
+            abiertos.Add(idCompra);
+        }
+    }
+
+    private string DescribirFiltros()
+    {
+        var partes = new List<string>
+        {
+            $"Del {(desde is null ? "inicio" : Formato.Fecha(desde.Value))} al {(hasta is null ? "día de hoy" : Formato.Fecha(hasta.Value))}"
+        };
+        if (idProveedor is not null) partes.Add("Proveedor: " + filtros.Proveedores.FirstOrDefault(p => p.Id == idProveedor)?.Nombre);
+        if (estado != "todas") partes.Add("Estado: " + estado);
+        return string.Join(" · ", partes);
+    }
+
+    // Una fila por cada producto comprado (encabezado repetido), lista para Excel.
+    private string GenerarCsv()
+    {
+        var csv = new Csv().Fila("No. compra", "Fecha", "Proveedor", "NIT", "Estado", "Código", "Producto", "Cantidad", "Precio costo", "Subtotal", "Total compra");
+        foreach (var c in reporte?.Compras ?? [])
+        {
+            foreach (var d in c.Detalle)
+            {
+                csv.Fila(c.IdCompra, c.Fecha, c.Proveedor, c.NitProveedor, c.Estado, d.Codigo, d.Descripcion, d.Cantidad, d.PrecioUnitario, d.Subtotal, c.Total);
+            }
+        }
+        return csv.ToString();
+    }
+
+    public void Dispose()
+    {
+        cts?.Cancel();
+        cts?.Dispose();
+    }
+}

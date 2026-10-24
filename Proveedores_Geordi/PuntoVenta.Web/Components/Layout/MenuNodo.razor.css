@@ -1,0 +1,52 @@
+/* Módulo: Menú dinámico — Rodrigo Rodríguez */
+
+.nav-item {
+    font-size: 0.9rem;
+    padding-bottom: 0.25rem;
+}
+
+    .nav-item ::deep .nav-link,
+    .nav-item .nav-link {
+        color: #d7d7d7;
+        background: none;
+        border: none;
+        border-radius: 4px;
+        min-height: 2.75rem;
+        display: flex;
+        align-items: center;
+        gap: .6rem;
+        width: 100%;
+        text-align: left;
+    }
+
+        .nav-item ::deep .nav-link:hover,
+        .nav-item .nav-link:hover {
+            background-color: rgba(255,255,255,0.1);
+            color: white;
+        }
+
+    .nav-item ::deep a.active {
+        background-color: rgba(255,255,255,0.37);
+        color: white;
+    }
+
+.nav-grupo {
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.texto {
+    flex: 1 1 auto;
+    line-height: 1.2;
+}
+
+.bi {
+    font-size: 1.05rem;
+    width: 1.25rem;
+    text-align: center;
+}
+
+.flecha {
+    font-size: .8rem;
+    opacity: .8;
+}

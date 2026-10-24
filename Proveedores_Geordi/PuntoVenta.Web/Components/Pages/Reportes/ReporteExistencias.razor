@@ -1,0 +1,222 @@
+@* Módulo: Reportes — Rodrigo Rodríguez *@
+@page "/reportes/existencias"
+@implements IDisposable
+@inject ReporteService Reportes
+
+<PageTitle>Reporte de existencias</PageTitle>
+
+<EncabezadoReporte Titulo="Reporte de existencias"
+                   FechaGeneracion="reporte?.FechaGeneracion"
+                   Descripcion="@descripcionFiltros"
+                   HayDatos="@(reporte?.Productos.Count > 0)"
+                   NombreArchivo="reporte_existencias"
+                   GenerarCsv="GenerarCsv" />
+
+<div class="reporte-filtros no-imprimir">
+    <form class="row g-2 align-items-end" @onsubmit="GenerarAsync" @onsubmit:preventDefault>
+        <div class="col-6 col-md-3">
+            <label class="form-label" for="marca">Marca</label>
+            <select id="marca" class="form-select" @bind="idMarca">
+                <option value="">Todas</option>
+                @foreach (var marca in filtros.Marcas)
+                {
+                    <option value="@marca.Id">@marca.Nombre</option>
+                }
+            </select>
+        </div>
+        <div class="col-6 col-md-2">
+            <label class="form-label" for="minimo">Stock mínimo</label>
+            <input id="minimo" type="number" min="0" max="1000000" step="1" class="form-control @(minimoValido ? "" : "is-invalid")" @bind="stockMinimo" />
+            <div class="invalid-feedback">Debe ser un número entre 0 y 1,000,000.</div>
+        </div>
+        <div class="col-12 col-md-4">
+            <div class="form-check mb-2">
+                <input id="soloBajas" type="checkbox" class="form-check-input" @bind="soloBajas" />
+                <label class="form-check-label" for="soloBajas">Solo productos agotados o con existencia baja</label>
+            </div>
+        </div>
+        <div class="col-12 col-md-3 d-flex gap-2">
+            <button type="submit" class="btn btn-primary flex-grow-1" disabled="@cargando">
+                <span class="bi bi-search me-1" aria-hidden="true"></span>Generar
+            </button>
+            <button type="button" class="btn btn-outline-secondary" @onclick="LimpiarAsync" disabled="@cargando">Limpiar</button>
+        </div>
+    </form>
+</div>
+
+<EstadoReporte Cargando="cargando" Error="error" SinResultados="@(reporte is not null && reporte.Productos.Count == 0)" />
+
+@if (!cargando && error is null && reporte is { Productos.Count: > 0 })
+{
+    <div class="reporte-resumen">
+        <TarjetaResumen Titulo="Productos" Valor="@Formato.Numero(reporte.TotalProductos)" />
+        <TarjetaResumen Titulo="Unidades en bodega" Valor="@Formato.Numero(reporte.TotalUnidades)" />
+        <TarjetaResumen Titulo="Inventario a costo" Valor="@Formato.Moneda(reporte.ValorTotalCosto)" />
+        <TarjetaResumen Titulo="Inventario a precio venta" Valor="@Formato.Moneda(reporte.ValorTotalVenta)" />
+        <TarjetaResumen Titulo="Agotados" Valor="@Formato.Numero(reporte.ProductosAgotados)" Clase="@(reporte.ProductosAgotados > 0 ? "border-danger" : null)" />
+        <TarjetaResumen Titulo="@($"Bajos (≤ {reporte.StockMinimo})")" Valor="@Formato.Numero(reporte.ProductosBajos)" Clase="@(reporte.ProductosBajos > 0 ? "border-warning" : null)" />
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-sm table-striped table-hover align-middle reporte-tabla">
+            <thead class="table-light">
+                <tr>
+                    <th>Código</th>
+                    <th>Descripción</th>
+                    <th>Marca</th>
+                    <th class="num">Existencia</th>
+                    <th class="num">Costo</th>
+                    <th class="num">Venta</th>
+                    <th class="num">Valor a costo</th>
+                    <th class="num">Valor a venta</th>
+                    <th>Estado</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var p in reporte.Productos)
+                {
+                    <tr @key="p.IdProducto">
+                        <td>@p.Codigo</td>
+                        <td>@p.Descripcion</td>
+                        <td>@p.Marca</td>
+                        <td class="num fw-semibold">@Formato.Numero(p.Existencia)</td>
+                        <td class="num">@Formato.Moneda(p.PrecioCosto)</td>
+                        <td class="num">@Formato.Moneda(p.PrecioVenta)</td>
+                        <td class="num">@Formato.Moneda(p.ValorCosto)</td>
+                        <td class="num">@Formato.Moneda(p.ValorVenta)</td>
+                        <td>
+                            @switch (p.EstadoStock)
+                            {
+                                case EstadoStock.Agotado:
+                                    <span class="badge text-bg-danger">Agotado</span>
+                                    break;
+                                case EstadoStock.Bajo:
+                                    <span class="badge text-bg-warning">Bajo</span>
+                                    break;
+                                default:
+                                    <span class="badge text-bg-success">Disponible</span>
+                                    break;
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+            <tfoot class="table-light fw-semibold">
+                <tr>
+                    <td colspan="3">Totales</td>
+                    <td class="num">@Formato.Numero(reporte.TotalUnidades)</td>
+                    <td></td>
+                    <td></td>
+                    <td class="num">@Formato.Moneda(reporte.ValorTotalCosto)</td>
+                    <td class="num">@Formato.Moneda(reporte.ValorTotalVenta)</td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+}
+
+@code {
+    private const int MinimoPorDefecto = 5;
+
+    private FiltrosReporteDto filtros = new();
+    private ReporteExistenciasDto? reporte;
+    private ApiException? error;
+    private bool cargando = true;
+    private string? descripcionFiltros;
+    private CancellationTokenSource? cts;
+
+    // Filtros
+    private int? idMarca;
+    private int? stockMinimo = MinimoPorDefecto;
+    private bool soloBajas;
+
+    private bool minimoValido => stockMinimo is >= 0 and <= 1_000_000;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            filtros = await Reportes.ObtenerFiltrosAsync();
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+            cargando = false;
+            return;
+        }
+        await GenerarAsync();
+    }
+
+    private async Task GenerarAsync()
+    {
+        if (!minimoValido)
+        {
+            return; // el mensaje de validación ya se muestra en el campo
+        }
+
+        cts?.Cancel();
+        cts = new CancellationTokenSource();
+        var token = cts.Token;
+
+        cargando = true;
+        error = null;
+        try
+        {
+            reporte = await Reportes.ExistenciasAsync(idMarca, stockMinimo!.Value, soloBajas, token);
+            descripcionFiltros = DescribirFiltros();
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+            reporte = null;
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            return;
+        }
+        finally
+        {
+            if (!token.IsCancellationRequested)
+            {
+                cargando = false;
+            }
+        }
+    }
+
+    private async Task LimpiarAsync()
+    {
+        idMarca = null;
+        stockMinimo = MinimoPorDefecto;
+        soloBajas = false;
+        await GenerarAsync();
+    }
+
+    private string DescribirFiltros()
+    {
+        var partes = new List<string> { $"Stock mínimo: {stockMinimo}" };
+        if (idMarca is not null) partes.Add("Marca: " + filtros.Marcas.FirstOrDefault(m => m.Id == idMarca)?.Nombre);
+        if (soloBajas) partes.Add("Solo agotados/bajos");
+        return string.Join(" · ", partes);
+    }
+
+    private string GenerarCsv()
+    {
+        var csv = new Csv().Fila("Código", "Descripción", "Marca", "Existencia", "Precio costo", "Precio venta", "Valor a costo", "Valor a venta", "Estado");
+        foreach (var p in reporte?.Productos ?? [])
+        {
+            csv.Fila(p.Codigo, p.Descripcion, p.Marca, p.Existencia, p.PrecioCosto, p.PrecioVenta, p.ValorCosto, p.ValorVenta, p.EstadoStock);
+        }
+        if (reporte is not null)
+        {
+            csv.Fila("TOTAL", "", "", reporte.TotalUnidades, "", "", reporte.ValorTotalCosto, reporte.ValorTotalVenta, "");
+        }
+        return csv.ToString();
+    }
+
+    public void Dispose()
+    {
+        cts?.Cancel();
+        cts?.Dispose();
+    }
+}

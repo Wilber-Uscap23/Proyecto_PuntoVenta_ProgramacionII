@@ -1,0 +1,11 @@
+@* Módulo: Reportes — Rodrigo Rodríguez *@
+<div class="resumen-tarjeta @Clase">
+    <div class="titulo">@Titulo</div>
+    <div class="valor">@Valor</div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Titulo { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string Valor { get; set; } = string.Empty;
+    [Parameter] public string? Clase { get; set; }
+}

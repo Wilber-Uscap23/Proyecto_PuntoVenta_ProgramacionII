@@ -1,0 +1,38 @@
+@* Módulo: Reportes — Rodrigo Rodríguez
+   Tabla con los productos de una compra o de una venta. *@
+
+@if (Lineas.Count == 0)
+{
+    <span class="text-muted small">Sin detalle registrado.</span>
+}
+else
+{
+    <table class="table table-sm table-borderless mb-0">
+        <thead>
+            <tr class="text-muted small">
+                <th>Código</th>
+                <th>Producto</th>
+                <th class="num">Cantidad</th>
+                <th class="num">@EtiquetaPrecio</th>
+                <th class="num">Subtotal</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var linea in Lineas)
+            {
+                <tr>
+                    <td>@linea.Codigo</td>
+                    <td>@linea.Descripcion</td>
+                    <td class="num">@Formato.Numero(linea.Cantidad)</td>
+                    <td class="num">@Formato.Moneda(linea.PrecioUnitario)</td>
+                    <td class="num">@Formato.Moneda(linea.Subtotal)</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    [Parameter, EditorRequired] public List<ReporteDetalleLineaDto> Lineas { get; set; } = new();
+    [Parameter] public string EtiquetaPrecio { get; set; } = "Precio";
+}

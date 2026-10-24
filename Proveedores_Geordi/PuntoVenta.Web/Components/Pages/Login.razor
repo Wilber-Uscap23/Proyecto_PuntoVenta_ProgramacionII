@@ -1,0 +1,103 @@
+@* BASE DE INTEGRACIÓN — el login real es de Wilber. Esta pantalla mínima
+   existe solo para obtener un token y poder probar el menú y los reportes. *@
+@page "/login"
+@layout LoginLayout
+@inject IHttpClientFactory HttpClientFactory
+@inject SesionService Sesion
+@inject NavigationManager Navigation
+
+<PageTitle>Iniciar sesión</PageTitle>
+
+<div class="row justify-content-center">
+    <div class="col-12 col-sm-8 col-md-6 col-lg-4">
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+                <h1 class="h4 mb-4 text-center"><span class="bi bi-shop me-2" aria-hidden="true"></span>Punto de Venta</h1>
+
+                <EditForm Model="modelo" OnValidSubmit="IngresarAsync" FormName="login">
+                    <DataAnnotationsValidator />
+
+                    <div class="mb-3">
+                        <label class="form-label" for="usuario">Usuario</label>
+                        <InputText id="usuario" class="form-control" @bind-Value="modelo.Usuario" autocomplete="username" />
+                        <ValidationMessage For="() => modelo.Usuario" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="password">Contraseña</label>
+                        <InputText id="password" type="password" class="form-control" @bind-Value="modelo.Password" autocomplete="current-password" />
+                        <ValidationMessage For="() => modelo.Password" />
+                    </div>
+
+                    @if (error is not null)
+                    {
+                        <div class="alert alert-danger py-2" role="alert">@error</div>
+                    }
+
+                    <button type="submit" class="btn btn-primary w-100" disabled="@enviando">
+                        @if (enviando)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+                        }
+                        Ingresar
+                    </button>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "regreso")]
+    public string? Regreso { get; set; }
+
+    private LoginRequestDto modelo = new();
+    private string? error;
+    private bool enviando;
+
+    private async Task IngresarAsync()
+    {
+        error = null;
+        enviando = true;
+        try
+        {
+            var http = HttpClientFactory.CreateClient(ApiClienteBase.NombreCliente);
+            using var respuesta = await http.PostAsJsonAsync("api/auth/login", modelo);
+
+            if (!respuesta.IsSuccessStatusCode)
+            {
+                error = "Usuario o contraseña incorrectos.";
+                return;
+            }
+
+            var sesion = await respuesta.Content.ReadFromJsonAsync<LoginResponseDto>();
+            if (sesion is null)
+            {
+                error = "La API devolvió una respuesta vacía.";
+                return;
+            }
+
+            await Sesion.IniciarAsync(sesion);
+            Navigation.NavigateTo(DestinoSeguro());
+        }
+        catch (HttpRequestException)
+        {
+            error = "No se pudo conectar con la API.";
+        }
+        finally
+        {
+            enviando = false;
+        }
+    }
+
+    // Solo se permite regresar a una página del mismo sitio.
+    private string DestinoSeguro()
+    {
+        if (string.IsNullOrWhiteSpace(Regreso) || Regreso.Contains("://") || Regreso.StartsWith("//") ||
+            Regreso.StartsWith("login", StringComparison.OrdinalIgnoreCase))
+        {
+            return "";
+        }
+        return Regreso.TrimStart('/');
+    }
+}

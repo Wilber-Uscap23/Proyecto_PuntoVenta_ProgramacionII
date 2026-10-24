@@ -1,0 +1,205 @@
+@* Módulo: Reportes — Rodrigo Rodríguez *@
+@page "/reportes/productos"
+@implements IDisposable
+@inject ReporteService Reportes
+
+<PageTitle>Reporte de productos</PageTitle>
+
+<EncabezadoReporte Titulo="Reporte de productos"
+                   FechaGeneracion="reporte?.FechaGeneracion"
+                   Descripcion="@descripcionFiltros"
+                   HayDatos="@(reporte?.Productos.Count > 0)"
+                   NombreArchivo="reporte_productos"
+                   GenerarCsv="GenerarCsv" />
+
+<div class="reporte-filtros no-imprimir">
+    <form class="row g-2 align-items-end" @onsubmit="GenerarAsync" @onsubmit:preventDefault>
+        <div class="col-12 col-md-4">
+            <label class="form-label" for="buscar">Buscar (código o descripción)</label>
+            <input id="buscar" class="form-control" maxlength="100" placeholder="Ej. P001 o pasta" @bind="buscar" />
+        </div>
+        <div class="col-6 col-md-3">
+            <label class="form-label" for="marca">Marca</label>
+            <select id="marca" class="form-select" @bind="idMarca">
+                <option value="">Todas</option>
+                @foreach (var marca in filtros.Marcas)
+                {
+                    <option value="@marca.Id">@marca.Nombre</option>
+                }
+            </select>
+        </div>
+        <div class="col-6 col-md-2">
+            <label class="form-label" for="estado">Estado</label>
+            <select id="estado" class="form-select" @bind="estado">
+                <option value="todos">Todos</option>
+                <option value="activos">Activos</option>
+                <option value="inactivos">Inactivos</option>
+            </select>
+        </div>
+        <div class="col-12 col-md-3 d-flex gap-2">
+            <button type="submit" class="btn btn-primary flex-grow-1" disabled="@cargando">
+                <span class="bi bi-search me-1" aria-hidden="true"></span>Generar
+            </button>
+            <button type="button" class="btn btn-outline-secondary" @onclick="LimpiarAsync" disabled="@cargando">Limpiar</button>
+        </div>
+    </form>
+</div>
+
+<EstadoReporte Cargando="cargando" Error="error" SinResultados="@(reporte is not null && reporte.Productos.Count == 0)" />
+
+@if (!cargando && error is null && reporte is { Productos.Count: > 0 })
+{
+    <div class="reporte-resumen">
+        <TarjetaResumen Titulo="Productos" Valor="@Formato.Numero(reporte.TotalProductos)" />
+        <TarjetaResumen Titulo="Activos" Valor="@Formato.Numero(reporte.TotalActivos)" />
+        <TarjetaResumen Titulo="Inactivos" Valor="@Formato.Numero(reporte.TotalInactivos)" />
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-sm table-striped table-hover align-middle reporte-tabla">
+            <thead class="table-light">
+                <tr>
+                    <th class="no-imprimir">Imagen</th>
+                    <th>Código</th>
+                    <th>Descripción</th>
+                    <th>Marca</th>
+                    <th class="num">Costo</th>
+                    <th class="num">Venta</th>
+                    <th class="num">Ganancia</th>
+                    <th class="num">Existencia</th>
+                    <th>Ingreso</th>
+                    <th>Estado</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var p in reporte.Productos)
+                {
+                    var imagen = Reportes.ResolverUrlImagen(p.ImagenUrl);
+                    <tr @key="p.IdProducto">
+                        <td class="no-imprimir">
+                            @if (imagen is not null)
+                            {
+                                <img class="reporte-miniatura" src="@imagen" alt="@p.Descripcion" loading="lazy" onerror="this.style.visibility='hidden'" />
+                            }
+                            else
+                            {
+                                <span class="bi bi-image text-muted" title="Sin imagen" aria-label="Sin imagen"></span>
+                            }
+                        </td>
+                        <td>@p.Codigo</td>
+                        <td>@p.Descripcion</td>
+                        <td>@p.Marca</td>
+                        <td class="num">@Formato.Moneda(p.PrecioCosto)</td>
+                        <td class="num">@Formato.Moneda(p.PrecioVenta)</td>
+                        <td class="num">@Formato.Moneda(p.Ganancia)</td>
+                        <td class="num">@Formato.Numero(p.Existencia)</td>
+                        <td>@Formato.Fecha(p.FechaIngreso)</td>
+                        <td>
+                            @if (p.Activo)
+                            {
+                                <span class="badge text-bg-success">Activo</span>
+                            }
+                            else
+                            {
+                                <span class="badge text-bg-secondary">Inactivo</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private FiltrosReporteDto filtros = new();
+    private ReporteProductosDto? reporte;
+    private ApiException? error;
+    private bool cargando = true;
+    private string? descripcionFiltros;
+    private CancellationTokenSource? cts;
+
+    // Filtros
+    private string? buscar;
+    private int? idMarca;
+    private string estado = "todos";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            filtros = await Reportes.ObtenerFiltrosAsync();
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+            cargando = false;
+            return;
+        }
+        await GenerarAsync();
+    }
+
+    private async Task GenerarAsync()
+    {
+        cts?.Cancel();
+        cts = new CancellationTokenSource();
+        var token = cts.Token;
+
+        cargando = true;
+        error = null;
+        try
+        {
+            reporte = await Reportes.ProductosAsync(buscar, idMarca, estado, token);
+            descripcionFiltros = DescribirFiltros();
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+            reporte = null;
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            return;
+        }
+        finally
+        {
+            if (!token.IsCancellationRequested)
+            {
+                cargando = false;
+            }
+        }
+    }
+
+    private async Task LimpiarAsync()
+    {
+        buscar = null;
+        idMarca = null;
+        estado = "todos";
+        await GenerarAsync();
+    }
+
+    private string DescribirFiltros()
+    {
+        var partes = new List<string>();
+        if (!string.IsNullOrWhiteSpace(buscar)) partes.Add($"Búsqueda: \"{buscar.Trim()}\"");
+        if (idMarca is not null) partes.Add("Marca: " + filtros.Marcas.FirstOrDefault(m => m.Id == idMarca)?.Nombre);
+        partes.Add("Estado: " + estado);
+        return string.Join(" · ", partes);
+    }
+
+    private string GenerarCsv()
+    {
+        var csv = new Csv().Fila("Código", "Descripción", "Marca", "Precio costo", "Precio venta", "Ganancia", "Existencia", "Fecha ingreso", "Activo");
+        foreach (var p in reporte?.Productos ?? [])
+        {
+            csv.Fila(p.Codigo, p.Descripcion, p.Marca, p.PrecioCosto, p.PrecioVenta, p.Ganancia, p.Existencia, p.FechaIngreso, p.Activo);
+        }
+        return csv.ToString();
+    }
+
+    public void Dispose()
+    {
+        cts?.Cancel();
+        cts?.Dispose();
+    }
+}
