@@ -1,0 +1,153 @@
+@* Módulo: Proveedores y Compras — comprobante imprimible de una compra *@
+@page "/compras/factura/{Id:int}"
+@inject CompraService ComprasApi
+@inject ReporteJsService Js
+
+<PageTitle>Compra No. @Id</PageTitle>
+
+@* La hoja de la factura va en vertical (los reportes usan horizontal). Solo existe mientras esta página está abierta. *@
+<style>
+    @@media print {
+        @@page { size: portrait; margin: 14mm; }
+        .factura { border: none !important; padding: 0 !important; max-width: none !important; }
+        .factura-tabla thead { display: table-header-group; }
+        .factura-tabla tr { page-break-inside: avoid; }
+    }
+    .factura { max-width: 820px; margin: 0 auto; background: #fff; border: 1px solid #dee2e6; border-radius: .5rem; padding: 2rem; }
+    .factura-tabla td.num, .factura-tabla th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+</style>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3 no-imprimir">
+    <a class="btn btn-outline-secondary" href="@UrlVolver">
+        <span class="bi bi-arrow-left me-1" aria-hidden="true"></span>Volver a compras
+    </a>
+    <button type="button" class="btn btn-primary" @onclick="ImprimirAsync" disabled="@(detalle is null)">
+        <span class="bi bi-printer me-1" aria-hidden="true"></span>Imprimir factura
+    </button>
+</div>
+
+@if (error is not null)
+{
+    <div class="alert alert-danger no-imprimir" role="alert">@error</div>
+}
+else if (detalle is null)
+{
+    <p class="text-muted">Cargando factura...</p>
+}
+else
+{
+    <section class="factura" aria-label="Factura de compra">
+        <div class="d-flex justify-content-between align-items-start border-bottom pb-3 mb-3">
+            <div>
+                <div class="h4 mb-0"><span class="bi bi-shop me-2" aria-hidden="true"></span>Punto de Venta</div>
+                <div class="text-muted">Comprobante de compra a proveedor</div>
+            </div>
+            <div class="text-end">
+                <div class="h5 mb-1">Compra No. @detalle.IdCompra</div>
+                <div>Fecha: @Formato.FechaHora(detalle.Fecha)</div>
+                <div>
+                    Estado:
+                    <span class="badge @(detalle.Estado == EstadoMovimiento.Anulada ? "text-bg-secondary" : "text-bg-success")">@detalle.Estado</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mb-3">
+            <div class="col-7">
+                <div class="text-muted small text-uppercase">Proveedor</div>
+                <div class="fw-semibold">@detalle.Proveedor</div>
+                <div>NIT: @(string.IsNullOrWhiteSpace(detalle.NitProveedor) ? "—" : detalle.NitProveedor)</div>
+            </div>
+            <div class="col-5">
+                <div class="text-muted small text-uppercase">Observaciones</div>
+                <div>@(string.IsNullOrWhiteSpace(detalle.Observaciones) ? "—" : detalle.Observaciones)</div>
+            </div>
+        </div>
+
+        <table class="table table-sm factura-tabla align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Código</th>
+                    <th>Descripción</th>
+                    <th class="num">Cantidad</th>
+                    <th class="num">Precio costo</th>
+                    <th class="num">Subtotal</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var l in detalle.Lineas)
+                {
+                    <tr>
+                        <td>@l.Codigo</td>
+                        <td>@l.Descripcion</td>
+                        <td class="num">@Formato.Numero(l.Cantidad)</td>
+                        <td class="num">@Formato.Moneda(l.PrecioCosto)</td>
+                        <td class="num">@Formato.Moneda(l.Subtotal)</td>
+                    </tr>
+                }
+            </tbody>
+            <tfoot>
+                <tr class="fw-semibold">
+                    <td colspan="2" class="text-end">Total de artículos</td>
+                    <td class="num">@Formato.Numero(detalle.CantidadArticulos)</td>
+                    <td class="num">TOTAL</td>
+                    <td class="num fs-6">@Formato.Moneda(detalle.Total)</td>
+                </tr>
+            </tfoot>
+        </table>
+
+        <p class="text-muted small mb-0 mt-4">
+            @detalle.Lineas.Count producto(s) distinto(s) · Documento generado el @Formato.FechaHora(DateTime.Now)
+        </p>
+    </section>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    // true cuando se llega justo después de guardar la compra: abre el cuadro de impresión solo.
+    [SupplyParameterFromQuery(Name = "imprimir")] public bool Imprimir { get; set; }
+
+    private CompraDetalleDto? detalle;
+    private string? error;
+    private bool impresionLanzada;
+
+    private string UrlVolver => Imprimir ? $"/compras?creada={Id}" : "/compras";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        detalle = null;
+        error = null;
+        impresionLanzada = false;
+        try
+        {
+            detalle = await ComprasApi.ObtenerAsync(Id);
+        }
+        catch (ApiException ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Se imprime una sola vez, cuando la factura ya está dibujada en pantalla.
+        if (Imprimir && detalle is not null && !impresionLanzada)
+        {
+            impresionLanzada = true;
+            await ImprimirAsync();
+        }
+    }
+
+    private async Task ImprimirAsync()
+    {
+        try
+        {
+            await Js.ImprimirAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+            // la pestaña se cerró: nada que hacer
+        }
+    }
+}

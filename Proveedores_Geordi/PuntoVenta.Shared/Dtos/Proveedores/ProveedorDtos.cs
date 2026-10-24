@@ -27,12 +27,12 @@ public class ProveedorGuardarDto
     [StringLength(150, ErrorMessage = "El nombre no puede tener más de 150 caracteres.")]
     public string Nombre { get; set; } = string.Empty;
 
-    [StringLength(20, ErrorMessage = "El NIT no puede tener más de 20 caracteres.")]
-    [RegularExpression(@"^[0-9A-Za-z\-]+$", ErrorMessage = "El NIT solo puede tener letras, números y guiones.")]
+    [Required(ErrorMessage = "El NIT es obligatorio.")]
+    [RegularExpression(@"^[0-9]{8,10}$", ErrorMessage = "El NIT debe tener solo números, mínimo 8 y máximo 10 dígitos.")]
     public string? Nit { get; set; }
 
-    [StringLength(20, ErrorMessage = "El teléfono no puede tener más de 20 caracteres.")]
-    [RegularExpression(@"^[0-9+\-\s()]{7,20}$", ErrorMessage = "El teléfono no es válido (mínimo 7 dígitos).")]
+    [Required(ErrorMessage = "El número de teléfono es obligatorio.")]
+    [RegularExpression(@"^[0-9]{8}$", ErrorMessage = "El teléfono debe tener exactamente 8 números.")]
     public string? Telefono { get; set; }
 
     [StringLength(150, ErrorMessage = "El correo no puede tener más de 150 caracteres.")]

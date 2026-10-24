@@ -9,7 +9,7 @@
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
     <h1 class="h3 mb-0">Compras</h1>
     <div class="d-flex flex-wrap gap-2">
-        <a class="btn btn-outline-secondary" href="/proveedores">
+        <a class="btn btn-outline-secondary" href="/proveedores?nuevo=true&volver=%2Fcompras">
             <span class="bi bi-truck me-1" aria-hidden="true"></span>Ir a Proveedores
         </a>
         <a class="btn btn-primary" href="/compras/nueva">
@@ -79,6 +79,7 @@ else
                     <th class="text-end">Total</th>
                     <th>Estado</th>
                     <th>Observaciones</th>
+                    <th></th>
                 </tr>
             </thead>
             <tbody>
@@ -101,12 +102,17 @@ else
                             <span class="badge @(c.Estado == EstadoMovimiento.Anulada ? "text-bg-secondary" : "text-bg-success")">@c.Estado</span>
                         </td>
                         <td>@c.Observaciones</td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-secondary" href="/compras/factura/@c.IdCompra" title="Ver / imprimir factura">
+                                <span class="bi bi-printer" aria-hidden="true"></span><span class="visually-hidden">Factura de la compra @c.IdCompra</span>
+                            </a>
+                        </td>
                     </tr>
                     @if (abierta)
                     {
                         <tr>
                             <td></td>
-                            <td colspan="7">
+                            <td colspan="8">
                                 @if (!detalles.TryGetValue(c.IdCompra, out var detalle))
                                 {
                                     <span class="text-muted">Cargando detalle...</span>
@@ -148,7 +154,7 @@ else
                 <tr>
                     <td colspan="5">Total (sin anuladas)</td>
                     <td class="text-end">@Formato.Moneda(compras.Where(c => c.Estado == EstadoMovimiento.Registrada).Sum(c => c.Total))</td>
-                    <td colspan="2"></td>
+                    <td colspan="3"></td>
                 </tr>
             </tfoot>
         </table>

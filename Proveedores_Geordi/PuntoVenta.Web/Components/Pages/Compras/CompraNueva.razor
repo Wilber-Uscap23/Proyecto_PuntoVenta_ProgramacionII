@@ -346,7 +346,8 @@
             };
 
             var creada = await ComprasApi.CrearAsync(compra);
-            Navegacion.NavigateTo($"/compras?creada={creada.IdCompra}");
+            // Al terminar la compra se abre la factura y se lanza la impresión (como Ctrl + P).
+            Navegacion.NavigateTo($"/compras/factura/{creada.IdCompra}?imprimir=true");
         }
         catch (ApiException ex)
         {

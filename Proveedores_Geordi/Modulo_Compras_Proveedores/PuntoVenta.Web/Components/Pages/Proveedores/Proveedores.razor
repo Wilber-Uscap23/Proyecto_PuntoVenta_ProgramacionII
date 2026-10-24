@@ -12,7 +12,7 @@
         @if (RutaVolver is not null)
         {
             <a class="btn btn-outline-primary" href="@RutaVolver">
-                <span class="bi bi-arrow-left me-1" aria-hidden="true"></span>Volver a la compra
+                <span class="bi bi-arrow-left me-1" aria-hidden="true"></span>Volver
             </a>
         }
         <a class="btn btn-outline-secondary" href="/compras">
@@ -54,12 +54,22 @@
                         <InputText id="pNombre" class="form-control" @bind-Value="formulario.Nombre" maxlength="150" />
                     </div>
                     <div class="col-6 col-md-3">
-                        <label class="form-label" for="pNit">NIT</label>
-                        <InputText id="pNit" class="form-control" @bind-Value="formulario.Nit" maxlength="20" />
+                        <label class="form-label" for="pNit">NIT *</label>
+                        <InputText id="pNit" class="form-control" @bind-Value="formulario.Nit" maxlength="10"
+                                   inputmode="numeric" pattern="[0-9]{8,10}" autocomplete="off"
+                                   placeholder="8 a 10 dígitos"
+                                   onkeypress="return event.charCode >= 48 && event.charCode <= 57"
+                                   oninput="this.value = this.value.replace(/\D/g, '')" />
+                        <ValidationMessage For="() => formulario.Nit" class="text-danger small" />
                     </div>
                     <div class="col-6 col-md-3">
-                        <label class="form-label" for="pTelefono">Teléfono</label>
-                        <InputText id="pTelefono" class="form-control" @bind-Value="formulario.Telefono" maxlength="20" />
+                        <label class="form-label" for="pTelefono">Teléfono *</label>
+                        <InputText id="pTelefono" class="form-control" @bind-Value="formulario.Telefono" maxlength="8"
+                                   inputmode="numeric" type="tel" pattern="[0-9]{8}" autocomplete="off"
+                                   placeholder="8 dígitos"
+                                   onkeypress="return event.charCode >= 48 && event.charCode <= 57"
+                                   oninput="this.value = this.value.replace(/\D/g, '')" />
+                        <ValidationMessage For="() => formulario.Telefono" class="text-danger small" />
                     </div>
                     <div class="col-12 col-md-6">
                         <label class="form-label" for="pCorreo">Correo</label>
