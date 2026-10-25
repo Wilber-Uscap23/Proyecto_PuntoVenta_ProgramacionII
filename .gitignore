@@ -1,0 +1,25 @@
+# Archivos generados por .NET
+**/bin/
+**/obj/
+
+# Visual Studio y VS Code
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Archivos temporales y respaldos
+*.log
+*.tmp
+*.bak
+
+# Contraseñas y secretos
+**/secrets.json
+**/appsettings.Local.json
+**/.env
+**/.env.*
+!**/.env.example
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db

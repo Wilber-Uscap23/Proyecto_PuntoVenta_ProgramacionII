@@ -1,0 +1,26 @@
+
+@inject NavigationManager Navegacion
+
+<div class="min-vh-100 d-flex align-items-center justify-content-center">
+    <div class="text-center">
+        <div class="spinner-border text-primary mb-3"
+             role="status">
+        </div>
+
+        <p class="text-muted">
+            Redirigiendo al inicio de sesión...
+        </p>
+    </div>
+</div>
+
+@code {
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            Navegacion.NavigateTo(
+                "/login",
+                replace: true);
+        }
+    }
+}
