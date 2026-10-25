@@ -1,0 +1,1131 @@
+@page "/reportes"
+@rendermode InteractiveServer
+
+@using System.Net.Http.Json
+@using System.Globalization
+@using System.Text.Json
+@using Microsoft.JSInterop
+
+@inject HttpClient Http
+@inject IJSRuntime JS
+
+@implements IAsyncDisposable
+
+<PageTitle>Reportes - Sistema Punto de Venta</PageTitle>
+
+<div class="container-fluid mt-4">
+
+    <!-- ===================================== -->
+    <!-- ENCABEZADO                            -->
+    <!-- ===================================== -->
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2>Reportes del Punto de Venta</h2>
+
+        </div>
+    </div>
+
+    <!-- ===================================== -->
+    <!-- FILTROS DE FECHAS                     -->
+    <!-- ===================================== -->
+
+    <div class="card shadow-sm mb-4">
+
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">
+                Filtros del Reporte
+            </h5>
+        </div>
+
+        <div class="card-body">
+
+            <div class="row g-3 align-items-end">
+
+                <div class="col-md-4">
+
+                    <label class="form-label">
+                        Fecha inicial
+                    </label>
+
+                    <input type="date"
+                           class="form-control"
+                           @bind="fechaDesde"
+                           @bind:format="yyyy-MM-dd" />
+
+                </div>
+
+                <div class="col-md-4">
+
+                    <label class="form-label">
+                        Fecha final
+                    </label>
+
+                    <input type="date"
+                           class="form-control"
+                           @bind="fechaHasta"
+                           @bind:format="yyyy-MM-dd" />
+
+                </div>
+
+                <div class="col-md-4">
+
+                    <button type="button"
+                            class="btn btn-primary w-100"
+                            disabled="@cargando"
+                            @onclick="CargarReportes">
+
+                        @(cargando
+                            ? "Consultando..."
+                            : "Consultar Reportes")
+
+                    </button>
+
+                </div>
+
+            </div>
+
+            <div class="form-text mt-2">
+                Selecciona un período máximo de 366 días.
+                El inventario muestra las existencias actuales,
+                independientemente de las fechas.
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- ===================================== -->
+    <!-- ERRORES                               -->
+    <!-- ===================================== -->
+
+    @if (!string.IsNullOrWhiteSpace(error))
+    {
+        <div class="alert alert-danger">
+            @error
+        </div>
+    }
+
+    @if (cargando)
+    {
+        <div class="alert alert-info">
+            Consultando información de MySQL...
+        </div>
+    }
+
+    @if (reporte != null)
+    {
+        <!-- ================================= -->
+        <!-- INDICADORES GENERALES             -->
+        <!-- ================================= -->
+
+        <div class="row g-3 mb-4">
+
+            <div class="col-md-3">
+
+                <div class="card shadow-sm h-100">
+
+                    <div class="card-body">
+
+                        <div class="text-muted small">
+                            Total de ventas registradas
+                        </div>
+
+                        <h3 class="text-success">
+                            @Q(reporte.TotalVentas)
+                        </h3>
+
+                        <div class="text-muted small">
+                            @reporte.CantidadVentas ventas
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+            <div class="col-md-3">
+
+                <div class="card shadow-sm h-100">
+
+                    <div class="card-body">
+
+                        <div class="text-muted small">
+                            Total de compras registradas
+                        </div>
+
+                        <h3 class="text-primary">
+                            @Q(reporte.TotalCompras)
+                        </h3>
+
+                        <div class="text-muted small">
+                            @reporte.CantidadCompras compras
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+            <div class="col-md-3">
+
+                <div class="card shadow-sm h-100">
+
+                    <div class="card-body">
+
+                        <div class="text-muted small">
+                            Valor actual del inventario activo
+                        </div>
+
+                        <h3>
+                            @Q(reporte.ValorInventario)
+                        </h3>
+
+                        <div class="text-muted small">
+                            @reporte.ProductosActivos productos activos
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+            <div class="col-md-3">
+
+                <div class="card shadow-sm h-100">
+
+                    <div class="card-body">
+
+                        <div class="text-muted small">
+                            Alertas de inventario
+                        </div>
+
+                        <h3 class="text-danger">
+                            @reporte.ProductosAgotados agotados
+                        </h3>
+
+                        <div class="text-muted small">
+                            @reporte.ProductosStockBajo con stock bajo
+                            (1 a 5 unidades)
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        <!-- ================================= -->
+        <!-- SELECCIÓN DE REPORTE              -->
+        <!-- ================================= -->
+
+        <div class="card shadow-sm mb-4">
+
+            <div class="card-header bg-primary text-white">
+
+                <h5 class="mb-0">
+                    Consultar y Exportar
+                </h5>
+
+            </div>
+
+            <div class="card-body">
+
+                <div class="row g-3 align-items-end">
+
+                    <div class="col-md-4">
+
+                        <label class="form-label">
+                            Tipo de reporte
+                        </label>
+
+                        <select class="form-select"
+                                @bind="tipoReporte">
+
+                            <option value="VENTAS">
+                                Reporte de Ventas
+                            </option>
+
+                            <option value="COMPRAS">
+                                Reporte de Compras
+                            </option>
+
+                            <option value="PRODUCTOS">
+                                Productos Más Vendidos
+                            </option>
+
+                            <option value="INVENTARIO">
+                                Reporte de Inventario
+                            </option>
+
+                        </select>
+
+                    </div>
+
+                    <div class="col-md-4">
+
+                        <label class="form-label">
+                            Buscar en el reporte
+                        </label>
+
+                        <input class="form-control"
+                               placeholder="Buscar..."
+                               @bind="busqueda"
+                               @bind:event="oninput" />
+
+                    </div>
+
+                    <div class="col-md-4">
+
+                        <!-- DESCARGA AUTENTICADA -->
+
+                        @if (FechasSinCambios)
+                        {
+                            <button type="button"
+                                    class="btn btn-success w-100"
+                                    disabled="@(exportando || cargando)"
+                                    @onclick="ExportarCsv">
+
+                                @(exportando
+                                    ? "Exportando..."
+                                    : "Exportar a CSV (Excel)")
+
+                            </button>
+                        }
+                        else
+                        {
+                            <button type="button"
+                                    class="btn btn-success w-100"
+                                    disabled>
+
+                                Consulta primero las nuevas fechas
+
+                            </button>
+                        }
+
+                    </div>
+
+                </div>
+
+                @if (tipoReporte == "VENTAS" ||
+                     tipoReporte == "COMPRAS")
+                {
+                    <div class="row mt-3">
+
+                        <div class="col-md-4">
+
+                            <label class="form-label">
+                                Filtrar estado
+                            </label>
+
+                            <select class="form-select"
+                                    @bind="filtroEstado">
+
+                                <option value="TODOS">
+                                    Todos
+                                </option>
+
+                                <option value="REGISTRADA">
+                                    Registrados
+                                </option>
+
+                                <option value="ANULADA">
+                                    Anulados
+                                </option>
+
+                            </select>
+
+                        </div>
+
+                    </div>
+                }
+
+
+            </div>
+
+        </div>
+
+        <!-- ================================= -->
+        <!-- REPORTE DE VENTAS                 -->
+        <!-- ================================= -->
+
+        @if (tipoReporte == "VENTAS")
+        {
+            <div class="card shadow-sm mb-4">
+
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">
+                        Reporte de Ventas
+                    </h5>
+                </div>
+
+                <div class="card-body">
+
+                    @if (!VentasFiltradas.Any())
+                    {
+                        <div class="alert alert-info mb-0">
+                            No se encontraron ventas.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+
+                            <table class="table table-striped table-hover align-middle">
+
+                                <thead class="table-dark">
+
+                                    <tr>
+                                        <th>No.</th>
+                                        <th>Fecha</th>
+                                        <th>Cliente</th>
+                                        <th>Empleado</th>
+                                        <th>Total</th>
+                                        <th>Estado</th>
+                                    </tr>
+
+                                </thead>
+
+                                <tbody>
+
+                                    @foreach (var venta in VentasFiltradas)
+                                    {
+                                        <tr>
+
+                                            <td>@venta.IdVenta</td>
+
+                                            <td>
+                                                @venta.Fecha.ToString("dd/MM/yyyy HH:mm")
+                                            </td>
+
+                                            <td>@venta.Cliente</td>
+
+                                            <td>@venta.Empleado</td>
+
+                                            <td>@Q(venta.Total)</td>
+
+                                            <td>
+
+                                                @if (venta.Estado == "REGISTRADA")
+                                                {
+                                                    <span class="badge bg-success">
+                                                        Registrada
+                                                    </span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge bg-danger">
+                                                        @venta.Estado
+                                                    </span>
+                                                }
+
+                                            </td>
+
+                                        </tr>
+                                    }
+
+                                </tbody>
+
+                            </table>
+
+                        </div>
+                    }
+
+                </div>
+
+            </div>
+        }
+
+        <!-- ================================= -->
+        <!-- REPORTE DE COMPRAS                -->
+        <!-- ================================= -->
+
+        @if (tipoReporte == "COMPRAS")
+        {
+            <div class="card shadow-sm mb-4">
+
+                <div class="card-header bg-primary text-white">
+
+                    <h5 class="mb-0">
+                        Reporte de Compras
+                    </h5>
+
+                </div>
+
+                <div class="card-body">
+
+                    @if (!ComprasFiltradas.Any())
+                    {
+                        <div class="alert alert-info mb-0">
+                            No se encontraron compras.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+
+                            <table class="table table-striped table-hover align-middle">
+
+                                <thead class="table-dark">
+
+                                    <tr>
+                                        <th>No.</th>
+                                        <th>Fecha</th>
+                                        <th>Proveedor</th>
+                                        <th>Total</th>
+                                        <th>Estado</th>
+                                    </tr>
+
+                                </thead>
+
+                                <tbody>
+
+                                    @foreach (var compra in ComprasFiltradas)
+                                    {
+                                        <tr>
+
+                                            <td>@compra.IdCompra</td>
+
+                                            <td>
+                                                @compra.Fecha.ToString("dd/MM/yyyy HH:mm")
+                                            </td>
+
+                                            <td>@compra.Proveedor</td>
+
+                                            <td>@Q(compra.Total)</td>
+
+                                            <td>
+
+                                                @if (compra.Estado == "REGISTRADA")
+                                                {
+                                                    <span class="badge bg-success">
+                                                        Registrada
+                                                    </span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge bg-danger">
+                                                        @compra.Estado
+                                                    </span>
+                                                }
+
+                                            </td>
+
+                                        </tr>
+                                    }
+
+                                </tbody>
+
+                            </table>
+
+                        </div>
+                    }
+
+                </div>
+
+            </div>
+        }
+
+        <!-- ================================= -->
+        <!-- PRODUCTOS MÁS VENDIDOS            -->
+        <!-- ================================= -->
+
+        @if (tipoReporte == "PRODUCTOS")
+        {
+            <div class="card shadow-sm mb-4">
+
+                <div class="card-header bg-primary text-white">
+
+                    <h5 class="mb-0">
+                        Los 10 Productos Más Vendidos
+                    </h5>
+
+                </div>
+
+                <div class="card-body">
+
+                    @if (!ProductosFiltrados.Any())
+                    {
+                        <div class="alert alert-info mb-0">
+
+                            No se encontraron ventas de productos
+                            para el período seleccionado.
+
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+
+                            <table class="table table-striped table-hover align-middle">
+
+                                <thead class="table-dark">
+
+                                    <tr>
+                                        <th>Código</th>
+                                        <th>Producto</th>
+                                        <th>Unidades vendidas</th>
+                                        <th>Total vendido</th>
+                                    </tr>
+
+                                </thead>
+
+                                <tbody>
+
+                                    @foreach (var producto in ProductosFiltrados)
+                                    {
+                                        <tr>
+
+                                            <td>@producto.Codigo</td>
+
+                                            <td>@producto.Descripcion</td>
+
+                                            <td>
+                                                <strong>
+                                                    @producto.UnidadesVendidas
+                                                </strong>
+                                            </td>
+
+                                            <td>
+                                                @Q(producto.TotalVendido)
+                                            </td>
+
+                                        </tr>
+                                    }
+
+                                </tbody>
+
+                            </table>
+
+                        </div>
+                    }
+
+                </div>
+
+            </div>
+        }
+
+        <!-- ================================= -->
+        <!-- REPORTE DE INVENTARIO             -->
+        <!-- ================================= -->
+
+        @if (tipoReporte == "INVENTARIO")
+        {
+            <div class="card shadow-sm mb-4">
+
+                <div class="card-header bg-primary text-white">
+
+                    <h5 class="mb-0">
+                        Reporte de Inventario Actual
+                    </h5>
+
+                </div>
+
+                <div class="card-body">
+
+                    @if (!InventarioFiltrado.Any())
+                    {
+                        <div class="alert alert-info mb-0">
+                            No se encontraron productos.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+
+                            <table class="table table-striped table-hover align-middle">
+
+                                <thead class="table-dark">
+
+                                    <tr>
+                                        <th>Código</th>
+                                        <th>Producto</th>
+                                        <th>Marca</th>
+                                        <th>Existencia</th>
+                                        <th>Costo</th>
+                                        <th>Valor a costo</th>
+                                        <th>Estado</th>
+                                    </tr>
+
+                                </thead>
+
+                                <tbody>
+
+                                    @foreach (var producto in InventarioFiltrado)
+                                    {
+                                        <tr>
+
+                                            <td>@producto.Codigo</td>
+
+                                            <td>@producto.Descripcion</td>
+
+                                            <td>@producto.Marca</td>
+
+                                            <td>@producto.Existencia</td>
+
+                                            <td>
+                                                @Q(producto.PrecioCosto)
+                                            </td>
+
+                                            <td>
+                                                @Q(producto.ValorCosto)
+                                            </td>
+
+                                            <td>
+
+                                                @if (producto.Estado)
+                                                {
+                                                    <span class="badge bg-success">
+                                                        Activo
+                                                    </span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge bg-secondary">
+                                                        Inactivo
+                                                    </span>
+                                                }
+
+                                            </td>
+
+                                        </tr>
+                                    }
+
+                                </tbody>
+
+                            </table>
+
+                        </div>
+                    }
+
+                </div>
+
+            </div>
+        }
+    }
+
+</div>
+
+
+@code {
+
+    // ========================================
+    // MODELOS DE RESPUESTA
+    // ========================================
+
+    public class VentaReporte
+    {
+        public int IdVenta { get; set; }
+        public DateTime Fecha { get; set; }
+        public string Cliente { get; set; } = "";
+        public string Empleado { get; set; } = "";
+        public decimal Total { get; set; }
+        public string Estado { get; set; } = "";
+    }
+
+    public class CompraReporte
+    {
+        public int IdCompra { get; set; }
+        public DateTime Fecha { get; set; }
+        public string Proveedor { get; set; } = "";
+        public decimal Total { get; set; }
+        public string Estado { get; set; } = "";
+    }
+
+    public class ProductoVendido
+    {
+        public int IdProducto { get; set; }
+        public string Codigo { get; set; } = "";
+        public string Descripcion { get; set; } = "";
+        public long UnidadesVendidas { get; set; }
+        public decimal TotalVendido { get; set; }
+    }
+
+    public class ProductoInventario
+    {
+        public int IdProducto { get; set; }
+        public string Codigo { get; set; } = "";
+        public string Descripcion { get; set; } = "";
+        public string Marca { get; set; } = "";
+        public int Existencia { get; set; }
+        public decimal PrecioCosto { get; set; }
+        public decimal PrecioVenta { get; set; }
+        public decimal ValorCosto { get; set; }
+        public bool Estado { get; set; }
+    }
+
+    public class DatosReporte
+    {
+        public DateTime Desde { get; set; }
+        public DateTime Hasta { get; set; }
+
+        public int CantidadVentas { get; set; }
+        public decimal TotalVentas { get; set; }
+
+        public int CantidadCompras { get; set; }
+        public decimal TotalCompras { get; set; }
+
+        public int ProductosActivos { get; set; }
+        public int ProductosAgotados { get; set; }
+        public int ProductosStockBajo { get; set; }
+        public decimal ValorInventario { get; set; }
+
+        public List<VentaReporte> Ventas { get; set; } = new();
+
+        public List<CompraReporte> Compras { get; set; } = new();
+
+        public List<ProductoVendido> ProductosMasVendidos { get; set; } = new();
+
+        public List<ProductoInventario> Inventario { get; set; } = new();
+    }
+
+    // ========================================
+    // VARIABLES
+    // ========================================
+
+    private DatosReporte? reporte;
+
+    private bool cargando;
+
+    private bool exportando;
+
+    private string? error;
+
+    private DateTime fechaDesde =
+        DateTime.Today.AddDays(-29);
+
+    private DateTime fechaHasta =
+        DateTime.Today;
+
+    private string tipoReporte = "VENTAS";
+
+    private string filtroEstado = "TODOS";
+
+    private string busqueda = "";
+
+    // Módulo JavaScript para descargar archivos.
+
+    private IJSObjectReference? moduloReportes;
+
+    // ========================================
+    // FORMATO DE QUETZALES
+    // ========================================
+
+    private static readonly CultureInfo Cultura =
+        CultureInfo.GetCultureInfo("es-GT");
+
+    private static string Q(decimal valor)
+    {
+        return "Q" + valor.ToString("N2", Cultura);
+    }
+
+    // ========================================
+    // COMPROBAR SI CAMBIARON LAS FECHAS
+    // ========================================
+
+    private bool FechasSinCambios =>
+        reporte != null &&
+        reporte.Desde.Date == fechaDesde.Date &&
+        reporte.Hasta.Date == fechaHasta.Date;
+
+    // ========================================
+    // BUSCAR EN VENTAS
+    // ========================================
+
+    private IEnumerable<VentaReporte> VentasFiltradas =>
+        (reporte?.Ventas ?? new()).Where(v =>
+            (
+                filtroEstado == "TODOS" ||
+                v.Estado == filtroEstado
+            )
+            &&
+            (
+                string.IsNullOrWhiteSpace(busqueda) ||
+                v.IdVenta.ToString().Contains(busqueda.Trim()) ||
+                v.Cliente.Contains(
+                    busqueda.Trim(),
+                    StringComparison.OrdinalIgnoreCase) ||
+                v.Empleado.Contains(
+                    busqueda.Trim(),
+                    StringComparison.OrdinalIgnoreCase)
+            )
+        );
+
+    // ========================================
+    // BUSCAR EN COMPRAS
+    // ========================================
+
+    private IEnumerable<CompraReporte> ComprasFiltradas =>
+        (reporte?.Compras ?? new()).Where(c =>
+            (
+                filtroEstado == "TODOS" ||
+                c.Estado == filtroEstado
+            )
+            &&
+            (
+                string.IsNullOrWhiteSpace(busqueda) ||
+                c.IdCompra.ToString().Contains(busqueda.Trim()) ||
+                c.Proveedor.Contains(
+                    busqueda.Trim(),
+                    StringComparison.OrdinalIgnoreCase)
+            )
+        );
+
+    // ========================================
+    // BUSCAR PRODUCTOS MÁS VENDIDOS
+    // ========================================
+
+    private IEnumerable<ProductoVendido> ProductosFiltrados =>
+        (reporte?.ProductosMasVendidos ?? new()).Where(p =>
+            string.IsNullOrWhiteSpace(busqueda) ||
+            p.Codigo.Contains(
+                busqueda.Trim(),
+                StringComparison.OrdinalIgnoreCase) ||
+            p.Descripcion.Contains(
+                busqueda.Trim(),
+                StringComparison.OrdinalIgnoreCase)
+        );
+
+    // ========================================
+    // BUSCAR EN INVENTARIO
+    // ========================================
+
+    private IEnumerable<ProductoInventario> InventarioFiltrado =>
+        (reporte?.Inventario ?? new()).Where(p =>
+            string.IsNullOrWhiteSpace(busqueda) ||
+            p.Codigo.Contains(
+                busqueda.Trim(),
+                StringComparison.OrdinalIgnoreCase) ||
+            p.Descripcion.Contains(
+                busqueda.Trim(),
+                StringComparison.OrdinalIgnoreCase) ||
+            p.Marca.Contains(
+                busqueda.Trim(),
+                StringComparison.OrdinalIgnoreCase)
+        );
+
+    // ========================================
+    // CONSULTAR AL INICIAR
+    // ========================================
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarReportes();
+    }
+
+    // ========================================
+    // CONSULTAR DATOS DE LA API
+    // ========================================
+
+    private async Task CargarReportes()
+    {
+        if (cargando)
+            return;
+
+        error = null;
+
+        if (fechaDesde.Date > fechaHasta.Date)
+        {
+            error =
+                "La fecha inicial no puede ser posterior a la fecha final.";
+
+            return;
+        }
+
+        if ((fechaHasta.Date - fechaDesde.Date).TotalDays > 366)
+        {
+            error =
+                "Selecciona un período máximo de 366 días.";
+
+            return;
+        }
+
+        cargando = true;
+
+        reporte = null;
+
+        try
+        {
+            string ruta =
+                $"api/Reportes/general" +
+                $"?desde={fechaDesde:yyyy-MM-dd}" +
+                $"&hasta={fechaHasta:yyyy-MM-dd}";
+
+            using var respuesta = await Http.GetAsync(ruta);
+
+            if (!respuesta.IsSuccessStatusCode)
+            {
+                error = await LeerError(respuesta);
+                return;
+            }
+
+            reporte = await respuesta.Content
+                .ReadFromJsonAsync<DatosReporte>();
+
+            if (reporte == null)
+            {
+                error =
+                    "La API no devolvió información del reporte.";
+            }
+        }
+        catch (Exception)
+        {
+            error =
+                "No se pudieron cargar los reportes. " +
+                "Verifica que la API y MySQL estén funcionando.";
+        }
+        finally
+        {
+            cargando = false;
+        }
+    }
+
+    // ========================================
+    // EXPORTAR CSV CON AUTENTICACIÓN JWT
+    // ========================================
+
+    private async Task ExportarCsv()
+    {
+        if (exportando || cargando || !FechasSinCambios)
+            return;
+
+        exportando = true;
+
+        error = null;
+
+        try
+        {
+            // Construir la ruta del reporte.
+
+            string ruta =
+                $"api/Reportes/exportar?tipo={tipoReporte}" +
+                $"&desde={fechaDesde:yyyy-MM-dd}" +
+                $"&hasta={fechaHasta:yyyy-MM-dd}";
+
+            // La petición se realiza con HttpClient.
+            // Así se envía el JWT de la sesión.
+
+            using var respuesta = await Http.GetAsync(ruta);
+
+            if (!respuesta.IsSuccessStatusCode)
+            {
+                error = await LeerError(respuesta);
+                return;
+            }
+
+            // Obtener el contenido del archivo CSV.
+
+            byte[] contenido = await respuesta.Content
+                .ReadAsByteArrayAsync();
+
+            if (contenido.Length == 0)
+            {
+                error = "El archivo CSV está vacío.";
+                return;
+            }
+
+            // Construir el nombre del archivo.
+
+            string nombreArchivo =
+                $"Reporte_{tipoReporte}_" +
+                $"{fechaDesde:yyyyMMdd}_" +
+                $"{fechaHasta:yyyyMMdd}.csv";
+
+            // Importar el módulo JavaScript
+            // que acabamos de crear.
+
+            moduloReportes ??=
+                await JS.InvokeAsync<IJSObjectReference>(
+                    "import",
+                    "./js/reportes.js");
+
+            // Compartir el archivo con el navegador
+            // sin exponer el token JWT.
+
+            using var memoria = new MemoryStream(contenido);
+
+            using var referencia =
+                new DotNetStreamReference(memoria);
+
+            await moduloReportes.InvokeVoidAsync(
+                "descargarCsv",
+                nombreArchivo,
+                referencia);
+        }
+        catch (HttpRequestException)
+        {
+            error =
+                "No fue posible conectar con la API para exportar el reporte.";
+        }
+        catch (JSException)
+        {
+            error =
+                "No fue posible iniciar la descarga del archivo CSV.";
+        }
+        catch (Exception)
+        {
+            error =
+                "Ocurrió un error al exportar el reporte.";
+        }
+        finally
+        {
+            exportando = false;
+        }
+    }
+
+    // ========================================
+    // LEER ERRORES DE LA API
+    // ========================================
+
+    private static async Task<string> LeerError(
+        HttpResponseMessage respuesta)
+    {
+        string contenido =
+            await respuesta.Content.ReadAsStringAsync();
+
+        try
+        {
+            using var documento =
+                JsonDocument.Parse(contenido);
+
+            if (documento.RootElement.TryGetProperty(
+                "mensaje",
+                out var mensaje))
+            {
+                return mensaje.GetString()
+                    ?? "No se pudo generar el reporte.";
+            }
+        }
+        catch (JsonException)
+        {
+            // La respuesta no contiene JSON.
+        }
+
+        return
+            $"Error al consultar el reporte. HTTP {(int)respuesta.StatusCode}.";
+    }
+
+    // ========================================
+    // LIBERAR EL MÓDULO JAVASCRIPT
+    // ========================================
+
+    public async ValueTask DisposeAsync()
+    {
+        if (moduloReportes != null)
+        {
+            try
+            {
+                await moduloReportes.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+                // La conexión Blazor ya finalizó.
+            }
+        }
+    }
+}

@@ -1,0 +1,3186 @@
+
+
+@page "/ventas"
+
+@rendermode InteractiveServer
+
+@using System.Net.Http.Json
+
+@using System.ComponentModel.DataAnnotations
+
+@using System.Globalization
+
+@using System.Text.Json
+
+@using System.Text.Json.Serialization
+@using System.Text.RegularExpressions
+@using PuntoVentaWeb.Servicios
+
+@inject HttpClient Http
+@inject SesionUsuario Sesion
+@inject Microsoft.JSInterop.IJSRuntime JS
+@implements IAsyncDisposable
+
+<PageTitle>Ventas - Sistema Punto de Venta</PageTitle>
+
+<style>
+    /* El EditForm de Blazor envuelve modal-body y modal-footer.
+       Por eso debe participar en el layout flex del modal de Bootstrap.
+       Así el contenido se desplaza y los botones siguen visibles. */
+    .pv-venta-modal .modal-dialog {
+        height: calc(100vh - 1.5rem);
+        height: calc(100dvh - 1.5rem);
+        max-height: calc(100vh - 1.5rem);
+        max-height: calc(100dvh - 1.5rem);
+        margin-top: 0.75rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .pv-venta-modal .modal-content {
+        max-height: 100%;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .pv-venta-modal .pv-venta-form {
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .pv-venta-modal .pv-venta-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
+
+    .pv-venta-modal .pv-venta-footer {
+        flex: 0 0 auto;
+        background: var(--bs-modal-bg, #fff);
+    }
+</style>
+
+
+<div class="container-fluid mt-4">
+
+    <!-- ENCABEZADO -->
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+
+        <div>
+
+            <h2>Administración de Ventas</h2>
+
+        </div>
+
+        @if (PuedeRegistrarVenta)
+        {
+            <button type="button" class="btn btn-primary" @onclick="AbrirNueva">
+                + Nueva Venta
+            </button>
+        }
+    </div>
+
+    <!-- MENSAJES -->
+
+    @if (!string.IsNullOrWhiteSpace(mensaje))
+
+    {
+
+        <div class="alert alert-success alert-dismissible">
+
+            @mensaje
+
+            <button type="button"
+
+                    class="btn-close"
+
+                    @onclick="() => mensaje = null">
+
+            </button>
+
+        </div>
+
+    }
+
+    @if (!string.IsNullOrWhiteSpace(error))
+
+    {
+
+        <div class="alert alert-danger alert-dismissible">
+
+            @error
+
+            <button type="button"
+
+                    class="btn-close"
+
+                    @onclick="() => error = null">
+
+            </button>
+
+        </div>
+
+    }
+
+    <!-- COMPROBANTE DISPONIBLE DESPUÉS DE GUARDAR -->
+
+    @if (ultimaVentaId is int numeroComprobante)
+
+    {
+
+        <div class="card border-success shadow-sm mb-4">
+
+            <div class="card-body">
+
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+
+                    <div>
+
+                        <h5 class="text-success mb-1">
+
+                            Comprobante de venta listo
+
+                        </h5>
+
+                    </div>
+
+                    <div class="d-flex gap-2 flex-wrap">
+
+                        <button type="button" class="btn btn-primary"
+                                disabled="@procesandoComprobante"
+                                @onclick="() => GestionarComprobante(numeroComprobante, false)">
+                                Ver / Imprimir PDF
+                            </button>
+
+                        <button type="button" class="btn btn-success"
+                                disabled="@procesandoComprobante"
+                                @onclick="() => GestionarComprobante(numeroComprobante, true)">
+                                Descargar PDF
+                            </button>
+
+                        <button type="button"
+
+                                class="btn btn-outline-secondary"
+
+                                @onclick="() => ultimaVentaId = null">
+
+                            Cerrar
+
+                        </button>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    }
+
+    <!-- FILTROS -->
+
+    <div class="card shadow-sm mb-3">
+
+        <div class="card-body">
+
+            <div class="row g-3">
+
+                <div class="col-md-8">
+
+                    <label class="form-label">Buscar venta</label>
+
+                    <input class="form-control"
+
+                           placeholder="Número, cliente o empleado..."
+
+                           @bind="busqueda"
+
+                           @bind:event="oninput" />
+
+                </div>
+
+                <div class="col-md-4">
+
+                    <label class="form-label">Estado</label>
+
+                    <select class="form-select"
+
+                            @bind="filtroEstado">
+
+                        <option value="TODAS">Todas</option>
+
+                        <option value="REGISTRADA">Registradas</option>
+
+                        <option value="ANULADA">Anuladas</option>
+
+                    </select>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- LISTADO DE VENTAS -->
+
+    <div class="card shadow-sm">
+
+        <div class="card-header bg-primary text-white">
+
+            <h5 class="mb-0">Listado de Ventas</h5>
+
+        </div>
+
+        <div class="card-body">
+
+            @if (cargando)
+
+            {
+
+                <p>Cargando ventas...</p>
+
+            }
+
+            else if (!VentasFiltradas.Any())
+
+            {
+
+                <div class="alert alert-info mb-0">
+
+                    No se encontraron ventas.
+
+                </div>
+
+            }
+
+            else
+
+            {
+
+                <div class="table-responsive">
+
+                    <table class="table table-striped table-hover align-middle">
+
+                        <thead class="table-dark">
+
+                            <tr>
+
+                                <th>No.</th>
+
+                                <th>Fecha</th>
+
+                                <th>Cliente</th>
+
+                                <th>Empleado</th>
+
+                                <th>Productos</th>
+
+                                <th>Total</th>
+
+                                <th>Estado</th>
+
+                                <th>Acciones</th>
+
+                            </tr>
+
+                        </thead>
+
+                        <tbody>
+
+                            @foreach (var venta in VentasFiltradas)
+
+                            {
+
+                                <tr>
+
+                                    <td>@venta.IdVenta</td>
+
+                                    <td>
+
+                                        @venta.FechaVenta.ToString("dd/MM/yyyy HH:mm")
+
+                                    </td>
+
+                                    <td>@venta.NombreCliente</td>
+
+                                    <td>@venta.NombreEmpleado</td>
+
+                                    <td>@venta.CantidadProductos</td>
+
+                                    <td>
+
+                                        <strong>@Q(venta.Total)</strong>
+
+                                    </td>
+
+                                    <td>
+
+                                        @if (venta.Estado == "REGISTRADA")
+
+                                        {
+
+                                            <span class="badge bg-success">
+
+                                                Registrada
+
+                                            </span>
+
+                                        }
+
+                                        else
+
+                                        {
+
+                                            <span class="badge bg-danger">
+
+                                                @venta.Estado
+
+                                            </span>
+
+                                        }
+
+                                    </td>
+
+                                    <td>
+
+                                        <div class="d-flex gap-1 flex-wrap">
+
+                                            <button type="button"
+
+                                                    class="btn btn-info btn-sm"
+
+                                                    @onclick="() => VerDetalle(venta.IdVenta)">
+
+                                                Ver
+
+                                            </button>
+
+                                            <!-- NUEVO: IMPRIMIR O REIMPRIMIR -->
+
+                                            <button type="button" class="btn btn-primary btn-sm"
+                                disabled="@procesandoComprobante"
+                                @onclick="() => GestionarComprobante(venta.IdVenta, false)">
+                                Imprimir PDF
+                            </button>
+
+                                            <!-- NUEVO: DESCARGAR PDF -->
+
+                                            <button type="button" class="btn btn-outline-primary btn-sm"
+                                disabled="@procesandoComprobante"
+                                @onclick="() => GestionarComprobante(venta.IdVenta, true)">
+                                Descargar
+                            </button>
+
+                                            @if (PuedeAdministrar && venta.Estado == "REGISTRADA")
+
+                                            {
+
+                                                <button type="button"
+
+                                                        class="btn btn-warning btn-sm"
+
+                                                        @onclick="() => AbrirEditar(venta.IdVenta)">
+
+                                                    Editar
+
+                                                </button>
+
+                                                <button type="button"
+
+                                                        class="btn btn-danger btn-sm"
+
+                                                        @onclick="() => PedirAnulacion(venta)">
+
+                                                    Anular
+
+                                                </button>
+
+                                            }
+
+                                        </div>
+
+                                    </td>
+
+                                </tr>
+
+                            }
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+            }
+
+        </div>
+
+    </div>
+
+</div>
+
+<!-- ========================================== -->
+
+<!-- MODAL CREAR / EDITAR VENTA                 -->
+
+<!-- ========================================== -->
+
+@if (mostrarFormulario)
+
+{
+
+    <div class="modal fade show d-block pv-venta-modal"
+
+         tabindex="-1"
+
+         role="dialog"
+
+         aria-modal="true"
+
+         aria-label="Formulario de venta">
+
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+
+            <div class="modal-content">
+
+                <div class="modal-header bg-primary text-white">
+
+                    <h5 class="modal-title">
+
+                        @(editando ? "Editar Venta" : "Registrar Nueva Venta")
+
+                    </h5>
+
+                    <button type="button"
+
+                            class="btn-close btn-close-white"
+
+                            disabled="@guardando"
+
+                            @onclick="CerrarFormulario">
+
+                    </button>
+
+                </div>
+
+                <EditForm Model="@formulario"
+
+                          @key="formulario"
+
+                          OnValidSubmit="GuardarVenta"
+
+                          FormName="ventaForm"
+
+                          class="pv-venta-form">
+
+                    <DataAnnotationsValidator />
+
+                    <div class="modal-body pv-venta-body">
+
+                        @if (!string.IsNullOrWhiteSpace(errorModal))
+
+                        {
+
+                            <div class="alert alert-danger">
+
+                                @errorModal
+
+                            </div>
+
+                        }
+
+                        <h5 class="mb-3">Datos de la venta</h5>
+
+                        <div class="row g-3 mb-4">
+
+                            <!-- CLIENTE: BÚSQUEDA POR NOMBRE O NIT Y CONSUMIDOR FINAL -->
+                            <div class="col-md-6">
+                                <label class="form-label">Cliente *</label>
+                                @if (!editando)
+                                {
+                                    <select class="form-select mb-2" value="@tipoCliente"
+                                            disabled="@(preparandoCF || guardando)"
+                                            @onchange="CambiarTipoCliente">
+                                        <option value="REGISTRADO">Buscar cliente / registrar nuevo</option>
+                                        <option value="CF">Consumidor Final (CF)</option>
+                                    </select>
+                                }
+                                @if (tipoCliente == "CF")
+                                {
+                                    <div class="alert alert-info py-2 mb-1">
+                                        <strong>Consumidor Final (CF).</strong>
+                                        No se requiere NIT ni información personal para ventas de hasta Q2,500.00.
+                                        @if (preparandoCF)
+                                        {
+                                            <span> Preparando registro CF...</span>
+                                        }
+                                    </div>
+                                }
+                                else
+                                {
+                                    <label class="form-label small mb-1" for="buscar-cliente-venta">
+                                        Buscar por NIT, nombre o apellido
+                                    </label>
+                                    <input id="buscar-cliente-venta" type="search"
+                                           class="form-control mb-2"
+                                           autocomplete="off"
+                                           value="@nitBusqueda"
+                                           @oninput="ActualizarBusquedaCliente"
+                                           disabled="@guardando" />
+
+                                    @if (nitBusqueda.Trim().Length >= 2)
+                                    {
+                                        var encontrados = ClientesCoincidentes;
+                                        @if (encontrados.Count > 0)
+                                        {
+                                            <div class="list-group mb-2" style="max-height:220px;overflow-y:auto;">
+                                                @foreach (var cliente in encontrados)
+                                                {
+                                                    <button type="button"
+                                                            class="list-group-item list-group-item-action text-start"
+                                                            disabled="@guardando"
+                                                            @onclick="() => ElegirCliente(cliente)">
+                                                        <strong>@cliente.Nombre @cliente.Apellido</strong>
+                                                        <span class="text-muted small ms-2">NIT: @Mostrar(cliente.Nit)</span>
+                                                    </button>
+                                                }
+                                            </div>
+                                            <div class="form-text mb-2">Elegí el cliente correcto entre las coincidencias.</div>
+                                        }
+                                        else
+                                        {
+                                            <div class="alert alert-warning py-2 mb-2">
+                                                No se encontraron clientes activos con ese NIT o nombre.
+                                                @if (!editando)
+                                                {
+                                                    <span> Podés registrar uno nuevo o continuar como CF.</span>
+                                                }
+                                            </div>
+                                        }
+                                    }
+
+                                    @if (!string.IsNullOrWhiteSpace(mensajeNitBusqueda))
+                                    {
+                                        <div class="alert alert-warning py-2 mb-2">@mensajeNitBusqueda</div>
+                                    }
+
+                                    @if (ClienteSeleccionado is ClienteOpcion clienteActual)
+                                    {
+                                        <div class="border border-success rounded p-2 mb-2">
+                                            <div class="text-success fw-semibold">
+                                                Cliente seleccionado: @clienteActual.Nombre @clienteActual.Apellido
+                                            </div>
+                                            <div class="small">NIT: @Mostrar(clienteActual.Nit)</div>
+                                            <div class="small">Teléfono: @Mostrar(clienteActual.Telefono)</div>
+                                            <div class="small">Correo: @Mostrar(clienteActual.Correo)</div>
+                                            <div class="small">Dirección: @Mostrar(clienteActual.Direccion)</div>
+                                        </div>
+                                    }
+
+                                    @if (!editando && PuedeRegistrarVenta)
+                                    {
+                                        <div class="d-flex flex-wrap gap-2 mt-2">
+                                            <button type="button" class="btn btn-outline-primary btn-sm"
+                                                    disabled="@guardando"
+                                                    @onclick="AbrirClienteRapido">
+                                                + Registrar cliente nuevo
+                                            </button>
+                                            @if (nitBusqueda.Trim().Length >= 2 && ClientesCoincidentes.Count == 0)
+                                            {
+                                                <button type="button" class="btn btn-outline-secondary btn-sm"
+                                                        disabled="@guardando"
+                                                        @onclick="SeleccionarConsumidorFinal">
+                                                    Continuar como CF
+                                                </button>
+                                            }
+                                        </div>
+                                    }
+                                }
+                                <ValidationMessage For="@(() => formulario.IdCliente)" class="text-danger" />
+                            </div>
+
+                            <!-- EMPLEADO -->
+                            <div class="col-md-6">
+                                <label class="form-label">Empleado que vende *</label>
+                                @if (PuedeAdministrar)
+                                {
+                                    <InputSelect class="form-select" @bind-Value="formulario.IdEmpleado">
+                                        <option value="0">-- Selecciona un empleado --</option>
+                                        @foreach (var empleado in empleados.Where(e =>
+                                            e.Estado == true || (editando && e.IdEmpleado == formulario.IdEmpleado)))
+                                        {
+                                            <option value="@empleado.IdEmpleado">
+                                                @empleado.Nombre @empleado.Apellido
+                                                @(empleado.Estado == true ? "" : " (Inactivo)")
+                                            </option>
+                                        }
+                                    </InputSelect>
+                                }
+                                else
+                                {
+                                    <input class="form-control" readonly
+                                           value="@NombreEmpleadoSesion" />
+                                    <div class="form-text">Se utiliza el empleado de la sesión actual.</div>
+                                }
+                                <ValidationMessage For="@(() => formulario.IdEmpleado)" class="text-danger" />
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label">Fecha de venta</label>
+                                <input class="form-control" value="@FechaVentaVisible" readonly />
+                            </div>
+
+                        </div>
+
+                        <!-- DETALLE -->
+
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+
+                            <h5 class="mb-0">Productos de la venta</h5>
+
+                            <button type="button"
+
+                                    class="btn btn-outline-primary btn-sm"
+
+                                    disabled="@(formulario.Detalles.Count >= 50 || guardando)"
+
+                                    @onclick="AgregarLinea">
+
+                                + Agregar Producto
+
+                            </button>
+
+                        </div>
+
+                        <div class="table-responsive">
+
+                            <table class="table table-bordered align-middle">
+
+                                <thead class="table-dark">
+
+                                    <tr>
+
+                                        <th style="min-width:240px;">Producto</th>
+
+                                        <th style="min-width:120px;">Cantidad</th>
+
+                                        <th style="min-width:145px;">Precio (Q)</th>
+
+                                        <th style="min-width:130px;">Subtotal</th>
+
+                                        <th style="width:75px;">Acción</th>
+
+                                    </tr>
+
+                                </thead>
+
+                                <tbody>
+
+                                    @foreach (var linea in formulario.Detalles)
+
+                                    {
+
+                                        <tr @key="linea.Clave">
+
+                                            <td>
+                                                <input type="search"
+                                                       class="form-control form-control-sm mb-1"
+                                                       placeholder="Buscar por código o descripción..."
+                                                       aria-label="Buscar producto para la venta"
+                                                       autocomplete="off"
+                                                       @bind="linea.BusquedaProducto"
+                                                       @bind:event="oninput" />
+
+                                                <select class="form-select"
+                                                        value="@linea.IdProducto"
+                                                        @onchange="e => SeleccionarProducto(linea, e)">
+                                                    <option value="0">-- Selecciona un producto --</option>
+                                                    @foreach (var producto in ProductosFiltradosVenta(linea))
+                                                    {
+                                                        <option value="@producto.IdProducto">
+                                                            @producto.Codigo - @producto.Descripcion
+                                                            @(producto.Estado == true ? "" : " (Inactivo)")
+                                                        </option>
+                                                    }
+                                                </select>
+
+                                                <div class="form-text">
+
+                                                    Disponible:
+
+                                                    @StockDisponible(linea.IdProducto)
+
+                                                    unidades
+
+                                                </div>
+
+                                            </td>
+
+                                            <td>
+
+                                                <InputNumber class="form-control"
+
+                                                             min="1"
+
+                                                             max="1000000"
+
+                                                             step="1"
+
+                                                             @bind-Value="linea.Cantidad" />
+
+                                            </td>
+
+                                            <td>
+
+                                                <InputNumber class="form-control"
+
+                                                             min="0.01"
+
+                                                             step="0.01"
+
+                                                             @bind-Value="linea.PrecioVenta"
+                                                              readonly="@(!PuedeAdministrar)" />
+
+                                            </td>
+
+                                            <td>
+
+                                                <strong>@Q(Subtotal(linea))</strong>
+
+                                            </td>
+
+                                            <td>
+
+                                                <button type="button"
+
+                                                        class="btn btn-outline-danger btn-sm"
+
+                                                        disabled="@(formulario.Detalles.Count <= 1 || guardando)"
+
+                                                        @onclick="() => QuitarLinea(linea.Clave)">
+
+                                                    Quitar
+
+                                                </button>
+
+                                            </td>
+
+                                        </tr>
+
+                                    }
+
+                                </tbody>
+
+                            </table>
+
+                        </div>
+
+                        <ValidationMessage
+
+                            For="@(() => formulario.Detalles)"
+
+                            class="text-danger" />
+
+                        <!-- TOTAL -->
+
+                        <div class="d-flex justify-content-end mt-3">
+
+                            <div class="text-end">
+
+                                <div class="text-muted">
+
+                                    Total de la venta
+
+                                </div>
+
+                                <h3 class="text-primary">
+
+                                    @Q(TotalFormulario)
+
+                                </h3>
+                                @if (SuperaLimiteConsumidorFinal)
+                                {
+                                    <div class="alert alert-danger mt-2 mb-0 text-start" role="alert">
+                                        <strong>Venta bloqueada:</strong> Consumidor Final (CF) permite un máximo de Q2,500.00.
+                                        Seleccioná o registrá un cliente con NIT válido para continuar.
+                                    </div>
+                                }
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                    <div class="modal-footer pv-venta-footer">
+
+                        <button type="button"
+
+                                class="btn btn-secondary"
+
+                                disabled="@guardando"
+
+                                @onclick="CerrarFormulario">
+
+                            Cancelar
+
+                        </button>
+
+                        <button type="submit"
+
+                                class="btn btn-success"
+
+                                disabled="@(guardando || preparandoCF || formulario.IdCliente == 0 || SuperaLimiteConsumidorFinal)">
+
+                                @(guardando
+
+                                ? "Guardando..."
+
+                                : editando
+
+                                    ? "Guardar Cambios"
+
+                                    : "Registrar Venta")
+
+                        </button>
+
+                    </div>
+
+                </EditForm>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <div class="modal-backdrop fade show"></div>
+
+}
+
+<!-- ========================================== -->
+<!-- MODAL REGISTRAR CLIENTE DESDE VENTAS       -->
+<!-- ========================================== -->
+@if (mostrarClienteRapido)
+{
+    <div class="modal fade show d-block" style="z-index:1070;"
+         tabindex="-1" role="dialog" aria-modal="true" aria-label="Registrar cliente">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title">Registrar Cliente sin salir de Ventas</h5>
+                    <button type="button" class="btn-close btn-close-white"
+                            disabled="@guardandoCliente" @onclick="CerrarClienteRapido"></button>
+                </div>
+                <EditForm Model="@clienteRapido" @key="clienteRapido"
+                          OnValidSubmit="GuardarClienteRapido" FormName="clienteVentaForm">
+                    <DataAnnotationsValidator />
+                    <div class="modal-body">
+                        @if (!string.IsNullOrWhiteSpace(errorClienteRapido))
+                        {
+                            <div class="alert alert-danger">@errorClienteRapido</div>
+                        }
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Nombre *</label>
+                                <InputText class="form-control" @bind-Value="clienteRapido.Nombre" />
+                                <ValidationMessage For="@(() => clienteRapido.Nombre)" class="text-danger" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Apellido *</label>
+                                <InputText class="form-control" @bind-Value="clienteRapido.Apellido" />
+                                <ValidationMessage For="@(() => clienteRapido.Apellido)" class="text-danger" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">NIT *</label>
+                                <InputText class="form-control" @bind-Value="clienteRapido.Nit"
+                                           placeholder="Ej. 1234578-4" />
+                                <ValidationMessage For="@(() => clienteRapido.Nit)" class="text-danger" />
+                                <div class="form-text">Ingresá el NIT con dígito verificador válido.</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Teléfono (opcional)</label>
+                                <InputText class="form-control" @bind-Value="clienteRapido.Telefono"
+                                           placeholder="Ej. 5555-1234" />
+                                <ValidationMessage For="@(() => clienteRapido.Telefono)" class="text-danger" />
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Correo electrónico *</label>
+                                <InputText class="form-control" type="email" @bind-Value="clienteRapido.Correo" />
+                                <ValidationMessage For="@(() => clienteRapido.Correo)" class="text-danger" />
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Dirección *</label>
+                                <InputTextArea class="form-control" rows="2" @bind-Value="clienteRapido.Direccion" />
+                                <ValidationMessage For="@(() => clienteRapido.Direccion)" class="text-danger" />
+                            </div>
+                        </div>
+                        <div class="small text-muted mt-3">Los campos marcados con * son obligatorios. Al guardar, se seleccionará automáticamente para esta venta.</div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary"
+                                disabled="@guardandoCliente" @onclick="CerrarClienteRapido">Cancelar</button>
+                        <button type="submit" class="btn btn-success" disabled="@guardandoCliente">
+                            @(guardandoCliente ? "Guardando..." : "Guardar y seleccionar")
+                        </button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show" style="z-index:1060;"></div>
+}
+
+<!-- ========================================== -->
+
+<!-- MODAL VER DETALLE                         -->
+
+<!-- ========================================== -->
+
+@if (mostrarDetalle)
+
+{
+
+    <div class="modal fade show d-block"
+
+         tabindex="-1"
+
+         role="dialog"
+
+         aria-modal="true"
+
+         aria-label="Detalle de venta">
+
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+
+            <div class="modal-content">
+
+                <div class="modal-header bg-primary text-white">
+
+                    <h5 class="modal-title">Detalle de Venta</h5>
+
+                    <button type="button"
+
+                            class="btn-close btn-close-white"
+
+                            @onclick="CerrarDetalle">
+
+                    </button>
+
+                </div>
+
+                <div class="modal-body">
+
+                    @if (cargandoDetalle)
+
+                    {
+
+                        <p>Cargando detalle...</p>
+
+                    }
+
+                    else if (!string.IsNullOrWhiteSpace(errorDetalle))
+
+                    {
+
+                        <div class="alert alert-danger">
+
+                            @errorDetalle
+
+                        </div>
+
+                    }
+
+                    else if (detalleSeleccionado != null)
+
+                    {
+
+                        <div class="row g-3 mb-3">
+
+                            <div class="col-md-3">
+
+                                <strong>Venta:</strong>
+
+                                @detalleSeleccionado.IdVenta
+
+                            </div>
+
+                            <div class="col-md-3">
+
+                                <strong>Cliente:</strong>
+
+                                @detalleSeleccionado.NombreCliente
+
+                            </div>
+
+                            <div class="col-md-3">
+
+                                <strong>Empleado:</strong>
+
+                                @detalleSeleccionado.NombreEmpleado
+
+                            </div>
+
+                            <div class="col-md-3">
+
+                                <strong>Estado:</strong>
+
+                                @detalleSeleccionado.Estado
+
+                            </div>
+
+                        </div>
+
+                        <p>
+
+                            <strong>Fecha:</strong>
+
+                            @detalleSeleccionado.FechaVenta.ToString("dd/MM/yyyy HH:mm")
+
+                        </p>
+
+                        <p>
+
+                            <strong>Observaciones:</strong>
+
+                            @Mostrar(detalleSeleccionado.Observaciones)
+
+                        </p>
+
+                        <div class="table-responsive">
+
+                            <table class="table table-striped align-middle">
+
+                                <thead class="table-dark">
+
+                                    <tr>
+
+                                        <th>Código</th>
+
+                                        <th>Producto</th>
+
+                                        <th>Cantidad</th>
+
+                                        <th>Precio</th>
+
+                                        <th>Subtotal</th>
+
+                                    </tr>
+
+                                </thead>
+
+                                <tbody>
+
+                                    @foreach (var detalle in detalleSeleccionado.Detalles)
+
+                                    {
+
+                                        <tr>
+
+                                            <td>@detalle.Codigo</td>
+
+                                            <td>@detalle.Descripcion</td>
+
+                                            <td>@detalle.Cantidad</td>
+
+                                            <td>@Q(detalle.PrecioVenta)</td>
+
+                                            <td>@Q(detalle.Subtotal)</td>
+
+                                        </tr>
+
+                                    }
+
+                                </tbody>
+
+                            </table>
+
+                        </div>
+
+                        <h4 class="text-end">
+
+                            Total: @Q(detalleSeleccionado.Total)
+
+                        </h4>
+
+                    }
+
+                </div>
+
+                <div class="modal-footer">
+
+                    @if (detalleSeleccionado != null)
+
+                    {
+
+                        <button type="button" class="btn btn-primary"
+                                disabled="@procesandoComprobante"
+                                @onclick="() => GestionarComprobante(detalleSeleccionado.IdVenta, false)">
+                                Imprimir Comprobante
+                            </button>
+
+                        <button type="button" class="btn btn-success"
+                                disabled="@procesandoComprobante"
+                                @onclick="() => GestionarComprobante(detalleSeleccionado.IdVenta, true)">
+                                Descargar PDF
+                            </button>
+
+                    }
+
+                    <button type="button"
+
+                            class="btn btn-secondary"
+
+                            @onclick="CerrarDetalle">
+
+                        Cerrar
+
+                    </button>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <div class="modal-backdrop fade show"></div>
+
+}
+
+<!-- ========================================== -->
+
+<!-- MODAL ANULAR VENTA                        -->
+
+<!-- ========================================== -->
+
+@if (ventaAnular != null)
+
+{
+
+    <div class="modal fade show d-block"
+
+         tabindex="-1"
+
+         role="dialog"
+
+         aria-modal="true"
+
+         aria-label="Anulación de venta">
+
+        <div class="modal-dialog modal-dialog-centered">
+
+            <div class="modal-content">
+
+                <div class="modal-header">
+
+                    <h5 class="modal-title">Anular Venta</h5>
+
+                    <button type="button"
+
+                            class="btn-close"
+
+                            disabled="@anulando"
+
+                            @onclick="CerrarAnulacion">
+
+                    </button>
+
+                </div>
+
+                <div class="modal-body">
+
+                    @if (!string.IsNullOrWhiteSpace(errorAnulacion))
+
+                    {
+
+                        <div class="alert alert-danger">
+
+                            @errorAnulacion
+
+                        </div>
+
+                    }
+
+                    <p>
+
+                        ¿Deseas anular la venta
+
+                        <strong>No. @ventaAnular.IdVenta</strong>
+
+                        de <strong>@ventaAnular.NombreCliente</strong>?
+
+                    </p>
+
+                    <div class="alert alert-warning">
+
+                        Los productos serán devueltos al inventario.
+
+                        La venta permanecerá en el historial.
+
+                    </div>
+
+                    <p class="text-muted small mb-0">
+
+                        Si luego reimprimís su comprobante,
+
+                        aparecerá marcado como ANULADA.
+
+                    </p>
+
+                </div>
+
+                <div class="modal-footer">
+
+                    <button type="button"
+
+                            class="btn btn-secondary"
+
+                            disabled="@anulando"
+
+                            @onclick="CerrarAnulacion">
+
+                        Cancelar
+
+                    </button>
+
+                    <button type="button"
+
+                            class="btn btn-danger"
+
+                            disabled="@anulando"
+
+                            @onclick="ConfirmarAnulacion">
+
+                        @(anulando ? "Anulando..." : "Sí, Anular Venta")
+
+                    </button>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <div class="modal-backdrop fade show"></div>
+
+}
+
+@code {
+
+    // ========================================
+
+    // MODELOS DE CONSULTA
+
+    // ========================================
+
+    public class VentaResumen
+
+    {
+
+        public int IdVenta { get; set; }
+
+        public int IdCliente { get; set; }
+
+        public string NombreCliente { get; set; } = "";
+
+        public int IdEmpleado { get; set; }
+
+        public string NombreEmpleado { get; set; } = "";
+
+        public DateTime FechaVenta { get; set; }
+
+        public decimal Total { get; set; }
+
+        public string? Observaciones { get; set; }
+
+        public string Estado { get; set; } = "";
+
+        public int CantidadProductos { get; set; }
+
+    }
+
+    public class ClienteOpcion
+    {
+        public int IdCliente { get; set; }
+        public string Nombre { get; set; } = "";
+        public string Apellido { get; set; } = "";
+        public string? Nit { get; set; }
+        public string? Telefono { get; set; }
+        public string? Correo { get; set; }
+        public string? Direccion { get; set; }
+        public bool? Estado { get; set; }
+    }
+
+    public class EmpleadoOpcion
+
+    {
+
+        public int IdEmpleado { get; set; }
+
+        public string Nombre { get; set; } = "";
+
+        public string Apellido { get; set; } = "";
+
+        public bool? Estado { get; set; }
+
+    }
+
+    public class ProductoOpcion
+
+    {
+
+        public int IdProducto { get; set; }
+
+        public string Codigo { get; set; } = "";
+
+        public string Descripcion { get; set; } = "";
+
+        public decimal PrecioVenta { get; set; }
+
+        public int Existencia { get; set; }
+
+        public bool? Estado { get; set; }
+
+    }
+
+    public class DetalleVentaDto
+
+    {
+
+        public int IdDetalleVenta { get; set; }
+
+        public int IdProducto { get; set; }
+
+        public string Codigo { get; set; } = "";
+
+        public string Descripcion { get; set; } = "";
+
+        public int Cantidad { get; set; }
+
+        public decimal PrecioVenta { get; set; }
+
+        public decimal Subtotal { get; set; }
+
+    }
+
+    public class VentaCompleta
+
+    {
+
+        public int IdVenta { get; set; }
+
+        public int IdCliente { get; set; }
+
+        public string NombreCliente { get; set; } = "";
+
+        public int IdEmpleado { get; set; }
+
+        public string NombreEmpleado { get; set; } = "";
+
+        public DateTime FechaVenta { get; set; }
+
+        public decimal Total { get; set; }
+
+        public string? Observaciones { get; set; }
+
+        public string Estado { get; set; } = "";
+
+        public List<DetalleVentaDto> Detalles { get; set; } = new();
+
+    }
+
+    public class RespuestaGuardarVenta
+
+    {
+
+        public int IdVenta { get; set; }
+
+    }
+
+    // ========================================
+
+    // MODELO DE LÍNEA DEL FORMULARIO
+
+    // ========================================
+
+    public class LineaVentaFormulario
+
+    {
+
+        [JsonIgnore]
+
+        public Guid Clave { get; set; } = Guid.NewGuid();
+
+        public int IdProducto { get; set; }
+
+        [JsonIgnore]
+        public string BusquedaProducto { get; set; } = "";
+
+        public int Cantidad { get; set; } = 1;
+
+        public decimal PrecioVenta { get; set; }
+
+    }
+
+    // ========================================
+
+    // VALIDACIONES DEL FORMULARIO
+
+    // ========================================
+
+    // Datos para alta rápida desde el formulario de ventas.
+    public class ClienteRapidoDto : IValidatableObject
+    {
+        [Required(ErrorMessage = "El nombre es obligatorio.")]
+        [StringLength(100, MinimumLength = 2)]
+        [RegularExpression(@"^[\p{L}]+(?:[ '\-][\p{L}]+)*$",
+            ErrorMessage = "El nombre solo permite letras, espacios, guiones y apóstrofes.")]
+        public string Nombre { get; set; } = "";
+
+        [Required(ErrorMessage = "El apellido es obligatorio.")]
+        [StringLength(100, MinimumLength = 2)]
+        [RegularExpression(@"^[\p{L}]+(?:[ '\-][\p{L}]+)*$",
+            ErrorMessage = "El apellido solo permite letras, espacios, guiones y apóstrofes.")]
+        public string Apellido { get; set; } = "";
+
+        [Required(ErrorMessage = "El NIT es obligatorio para registrar un cliente.")]
+        [StringLength(20)]
+        public string? Nit { get; set; }
+
+        [StringLength(20)]
+        public string? Telefono { get; set; }
+
+        [Required(ErrorMessage = "El correo electrónico es obligatorio.")]
+        [EmailAddress(ErrorMessage = "El correo no es válido.")]
+        [StringLength(150)]
+        [RegularExpression(@"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$",
+            ErrorMessage = "El correo debe tener un formato válido.")]
+        public string? Correo { get; set; }
+
+        [Required(ErrorMessage = "La dirección es obligatoria.")]
+        [StringLength(255)]
+        public string? Direccion { get; set; }
+
+        public IEnumerable<ValidationResult> Validate(ValidationContext context)
+        {
+            if (!string.IsNullOrWhiteSpace(Nit) && !NitValido(Nit))
+                yield return new ValidationResult(
+                    "Ingresa un NIT guatemalteco con dígito verificador válido.",
+                    new[] { nameof(Nit) });
+
+            if (!string.IsNullOrWhiteSpace(Telefono) &&
+                !Regex.IsMatch(Telefono.Trim(), @"^(?:\+502[ -]?)?[2-7][0-9]{3}[ -]?[0-9]{4}$"))
+                yield return new ValidationResult(
+                    "Ingresa un teléfono de 8 dígitos, por ejemplo 5555-1234.",
+                    new[] { nameof(Telefono) });
+
+            if (!string.IsNullOrWhiteSpace(Direccion) &&
+                (Direccion.Trim().Length < 5 || !Direccion.Any(char.IsLetter)))
+                yield return new ValidationResult(
+                    "La dirección debe tener al menos 5 caracteres descriptivos.",
+                    new[] { nameof(Direccion) });
+        }
+
+        public static bool NitValido(string nit)
+        {
+            nit = nit.Trim().ToUpperInvariant();
+            if (!Regex.IsMatch(nit, @"^[0-9]{2,12}-[0-9K]$")) return false;
+            var partes = nit.Split('-');
+            var numeros = partes[0];
+            int suma = 0;
+            for (int i = 0; i < numeros.Length; i++)
+                suma += (numeros[i] - '0') * (numeros.Length - i + 1);
+            int resultado = 11 - (suma % 11);
+            if (resultado == 11) resultado = 0;
+            char esperado = resultado == 10 ? 'K' : (char)('0' + resultado);
+            return partes[1][0] == esperado;
+        }
+    }
+
+    public class FormularioVenta : IValidatableObject
+
+    {
+
+        [Range(1, int.MaxValue,
+
+            ErrorMessage = "Selecciona un cliente.")]
+
+        public int IdCliente { get; set; }
+
+        [Range(1, int.MaxValue,
+
+            ErrorMessage = "Selecciona un empleado.")]
+
+        public int IdEmpleado { get; set; }
+
+        [StringLength(255,
+
+            ErrorMessage = "Máximo 255 caracteres.")]
+
+        public string? Observaciones { get; set; }
+
+        public List<LineaVentaFormulario> Detalles { get; set; } = new()
+
+        {
+
+            new LineaVentaFormulario()
+
+        };
+
+        public IEnumerable<ValidationResult> Validate(
+
+            ValidationContext context)
+
+        {
+
+            if (Detalles == null || Detalles.Count == 0)
+
+            {
+
+                yield return new ValidationResult(
+
+                    "Agrega al menos un producto.",
+
+                    new[] { nameof(Detalles) });
+
+                yield break;
+
+            }
+
+            if (Detalles.Count > 50)
+
+            {
+
+                yield return new ValidationResult(
+
+                    "Máximo 50 productos por venta.",
+
+                    new[] { nameof(Detalles) });
+
+            }
+
+            var productos = new HashSet<int>();
+
+            decimal total = 0m;
+
+            foreach (var linea in Detalles)
+
+            {
+
+                if (linea.IdProducto <= 0)
+
+                {
+
+                    yield return new ValidationResult(
+
+                        "Selecciona un producto en cada fila.",
+
+                        new[] { nameof(Detalles) });
+
+                }
+
+                else if (!productos.Add(linea.IdProducto))
+
+                {
+
+                    yield return new ValidationResult(
+
+                        "No agregues el mismo producto dos veces.",
+
+                        new[] { nameof(Detalles) });
+
+                }
+
+                if (linea.Cantidad < 1 ||
+
+                    linea.Cantidad > 1000000)
+
+                {
+
+                    yield return new ValidationResult(
+
+                        "La cantidad debe estar entre 1 y 1,000,000.",
+
+                        new[] { nameof(Detalles) });
+
+                }
+
+                if (linea.PrecioVenta <= 0 ||
+
+                    linea.PrecioVenta > 9999999999.99m ||
+
+                    decimal.Round(linea.PrecioVenta, 2) !=
+
+                    linea.PrecioVenta)
+
+                {
+
+                    yield return new ValidationResult(
+
+                        "El precio debe ser positivo y tener máximo dos decimales.",
+
+                        new[] { nameof(Detalles) });
+
+                }
+
+                if (linea.Cantidad > 0 && linea.PrecioVenta > 0)
+
+                {
+
+                    decimal subtotal =
+
+                        linea.Cantidad * linea.PrecioVenta;
+
+                    if (subtotal > 9999999999.99m)
+
+                    {
+
+                        yield return new ValidationResult(
+
+                            "El subtotal supera el límite permitido.",
+
+                            new[] { nameof(Detalles) });
+
+                    }
+
+                    total += subtotal;
+
+                }
+
+            }
+
+            if (total > 9999999999.99m)
+
+            {
+
+                yield return new ValidationResult(
+
+                    "El total supera el límite permitido.",
+
+                    new[] { nameof(Detalles) });
+
+            }
+
+        }
+
+    }
+
+    // ========================================
+
+    // LISTADOS Y VARIABLES
+
+    // ========================================
+
+    // Permisos de interfaz: la API debe aplicar reglas equivalentes.
+    private bool PuedeAdministrar => Sesion.EstaAutenticado &&
+        string.Equals(Sesion.Rol, "ADMIN", StringComparison.OrdinalIgnoreCase);
+    private bool PuedeRegistrarVenta => Sesion.EstaAutenticado &&
+        (PuedeAdministrar || string.Equals(Sesion.Rol, "VENDEDOR", StringComparison.OrdinalIgnoreCase));
+
+    // NIT escrito en Nueva Venta; se busca contra el catálogo real de la API.
+    private int idClienteOriginalEdicion;
+    private DateTime fechaVentaOriginal;
+    private string FechaVentaVisible =>
+        (editando ? fechaVentaOriginal : DateTime.Now).ToString("dd/MM/yyyy HH:mm");
+
+    private string nitBusqueda = "";
+    private string? mensajeNitBusqueda;
+    private ClienteOpcion? ClienteSeleccionado =>
+        clientes.FirstOrDefault(c => c.IdCliente == formulario.IdCliente && !EsClienteCF(c));
+
+    private string tipoCliente = "REGISTRADO";
+    private bool preparandoCF;
+    private bool mostrarClienteRapido;
+    private bool guardandoCliente;
+    private ClienteRapidoDto clienteRapido = new();
+    private string? errorClienteRapido;
+
+    private string NombreEmpleadoSesion =>
+        empleados.FirstOrDefault(e => e.IdEmpleado == formulario.IdEmpleado) is EmpleadoOpcion emp
+            ? $"{emp.Nombre} {emp.Apellido}".Trim()
+            : Sesion.NombreCompleto;
+
+    private List<VentaResumen> ventas = new();
+
+    private List<ClienteOpcion> clientes = new();
+
+    private List<EmpleadoOpcion> empleados = new();
+
+    private List<ProductoOpcion> productos = new();
+
+    private FormularioVenta formulario = new();
+
+    private VentaCompleta? detalleSeleccionado;
+
+    private VentaResumen? ventaAnular;
+
+    private Dictionary<int, long> cantidadesOriginales = new();
+
+    private bool cargando = true;
+
+    private bool guardando;
+
+    private bool anulando;
+
+    private bool cargandoDetalle;
+
+    private bool mostrarFormulario;
+
+    private bool mostrarDetalle;
+
+    private bool editando;
+
+    private int idVentaEditar;
+
+    // NUEVO: VENTA CUYO COMPROBANTE SE PUEDE ABRIR
+
+    private int? ultimaVentaId;
+
+    private string busqueda = "";
+
+    private string filtroEstado = "TODAS";
+
+    private string? mensaje;
+
+    private string? error;
+
+    private string? errorModal;
+
+    private string? errorDetalle;
+
+    private string? errorAnulacion;
+
+    // ========================================
+
+    // QUETZALES
+
+    // ========================================
+
+    private static readonly CultureInfo Cultura =
+
+        CultureInfo.GetCultureInfo("es-GT");
+
+    private static string Q(decimal valor) =>
+
+        "Q" + valor.ToString("N2", Cultura);
+
+    private static string Mostrar(string? valor) =>
+
+        string.IsNullOrWhiteSpace(valor) ? "—" : valor;
+
+    // ========================================
+
+    // ========================================
+    // COMPROBANTES CON AUTENTICACIÓN JWT
+    // ========================================
+
+    private Microsoft.JSInterop.IJSObjectReference? moduloComprobantes;
+    private bool procesandoComprobante;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                // Importar el módulo desde wwwroot para poder abrir el PDF
+                // durante la interacción del usuario.
+                moduloComprobantes = await JS.InvokeAsync<Microsoft.JSInterop.IJSObjectReference>(
+                    "import", "./js/comprobantes.js");
+            }
+            catch (Microsoft.JSInterop.JSException)
+            {
+                // Se intentará nuevamente al presionar un botón.
+            }
+        }
+    }
+
+    private async Task GestionarComprobante(int id, bool descargar, string? idVentanaPreparada = null)
+    {
+        if (procesandoComprobante || id <= 0)
+            return;
+
+        if (!Sesion.EstaAutenticado)
+        {
+            error = "Tu sesión ha finalizado. Iniciá sesión nuevamente.";
+            return;
+        }
+
+        procesandoComprobante = true;
+        error = null;
+        // Si el registro reservó una pestaña antes de la llamada a la API,
+        // reutilizarla para que el navegador no bloquee la apertura automática.
+        string? idVentana = idVentanaPreparada;
+
+        try
+        {
+            moduloComprobantes ??= await JS.InvokeAsync<Microsoft.JSInterop.IJSObjectReference>(
+                "import", "./js/comprobantes.js");
+
+            // Para imprimir, se reutiliza la pestaña reservada al registrar la venta
+            // o se abre una pestaña nueva al presionar el botón de imprimir.
+            if (!descargar && string.IsNullOrWhiteSpace(idVentana))
+            {
+                idVentana = await moduloComprobantes.InvokeAsync<string?>("prepararVistaPdf");
+                if (string.IsNullOrWhiteSpace(idVentana))
+                    throw new InvalidOperationException(
+                        "El navegador bloqueó la pestaña del PDF. Permití ventanas emergentes para localhost:5105.");
+            }
+
+            // Petición mediante el HttpClient del sistema, configurado con la sesión JWT.
+            // No se pone el token en la URL, el HTML ni el código JavaScript.
+            using var respuesta = await Http.GetAsync(
+                $"api/Comprobantes/venta/{id}",
+                System.Net.Http.HttpCompletionOption.ResponseHeadersRead);
+
+            if (!respuesta.IsSuccessStatusCode)
+            {
+                string detalle = respuesta.StatusCode switch
+                {
+                    System.Net.HttpStatusCode.Unauthorized => "Tu sesión no está autorizada o ha expirado.",
+                    System.Net.HttpStatusCode.Forbidden => "No tenés permiso para consultar este comprobante.",
+                    System.Net.HttpStatusCode.NotFound => "La venta solicitada no existe.",
+                    _ => "No se pudo obtener el comprobante desde la API."
+                };
+                throw new InvalidOperationException(detalle);
+            }
+
+            byte[] contenido = await respuesta.Content.ReadAsByteArrayAsync();
+            if (contenido.Length == 0)
+                throw new InvalidOperationException("La API devolvió un comprobante vacío.");
+
+            string base64 = Convert.ToBase64String(contenido);
+            string nombreArchivo = $"Comprobante_Venta_{id:000000}.pdf";
+
+            if (descargar)
+                await moduloComprobantes.InvokeVoidAsync("descargarPdf", base64, nombreArchivo);
+            else
+                await moduloComprobantes.InvokeVoidAsync("mostrarPdf", idVentana, base64);
+        }
+        catch (Exception ex)
+        {
+            error = ex is Microsoft.JSInterop.JSDisconnectedException
+                ? "Se perdió la conexión con el navegador. Actualizá la página e intentá nuevamente."
+                : ex.Message;
+
+            if (idVentana != null && moduloComprobantes != null)
+            {
+                try { await moduloComprobantes.InvokeVoidAsync("cerrarVistaPdf", idVentana); }
+                catch (Microsoft.JSInterop.JSException) { }
+            }
+        }
+        finally
+        {
+            procesandoComprobante = false;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (moduloComprobantes != null)
+        {
+            try { await moduloComprobantes.DisposeAsync(); }
+            catch (Microsoft.JSInterop.JSDisconnectedException) { }
+        }
+    }
+
+    // ========================================
+
+    // FILTROS
+
+    // ========================================
+
+    private IEnumerable<VentaResumen> VentasFiltradas =>
+
+        ventas.Where(v =>
+
+            (filtroEstado == "TODAS" || v.Estado == filtroEstado)
+
+            &&
+
+            (string.IsNullOrWhiteSpace(busqueda) ||
+
+             v.IdVenta.ToString().Contains(busqueda.Trim()) ||
+
+             v.NombreCliente.Contains(
+
+                 busqueda.Trim(),
+
+                 StringComparison.OrdinalIgnoreCase) ||
+
+             v.NombreEmpleado.Contains(
+
+                 busqueda.Trim(),
+
+                 StringComparison.OrdinalIgnoreCase)))
+
+        .OrderByDescending(v => v.IdVenta);
+
+    // ========================================
+
+    // CÁLCULOS
+
+    // ========================================
+
+    private decimal TotalFormulario =>
+
+        formulario.Detalles.Sum(Subtotal);
+
+    private static decimal Subtotal(LineaVentaFormulario linea)
+
+    {
+
+        if (linea.Cantidad < 1 ||
+
+            linea.Cantidad > 1000000 ||
+
+            linea.PrecioVenta <= 0 ||
+
+            linea.PrecioVenta > 9999999999.99m)
+
+        {
+
+            return 0m;
+
+        }
+
+        return linea.Cantidad * linea.PrecioVenta;
+
+    }
+
+    private string StockDisponible(int idProducto)
+
+    {
+
+        var producto = productos
+
+            .FirstOrDefault(p => p.IdProducto == idProducto);
+
+        if (producto == null)
+
+            return "0";
+
+        long anterior = editando
+
+            ? cantidadesOriginales.GetValueOrDefault(idProducto)
+
+            : 0;
+
+        return ((long)producto.Existencia + anterior)
+
+            .ToString("N0", Cultura);
+
+    }
+
+    // ========================================
+
+    // CARGA INICIAL
+
+    // ========================================
+
+    protected override async Task OnInitializedAsync()
+
+    {
+
+        await CargarVentas();
+        if (PuedeRegistrarVenta)
+            await CargarCatalogos();
+
+    }
+
+    private async Task<bool> CargarVentas()
+
+    {
+
+        cargando = true;
+
+        try
+
+        {
+
+            ventas = await Http
+
+                .GetFromJsonAsync<List<VentaResumen>>(
+
+                    "api/Ventas") ?? new();
+
+            error = null;
+
+            return true;
+
+        }
+
+        catch (Exception)
+
+        {
+
+            error = "No se pudieron cargar las ventas.";
+
+            return false;
+
+        }
+
+        finally
+
+        {
+
+            cargando = false;
+
+        }
+
+    }
+
+    private async Task<bool> CargarCatalogos()
+
+    {
+
+        try
+
+        {
+
+            clientes = await Http
+
+                .GetFromJsonAsync<List<ClienteOpcion>>(
+
+                    "api/Clientes") ?? new();
+
+            empleados = await Http
+
+                .GetFromJsonAsync<List<EmpleadoOpcion>>(
+
+                    "api/Empleados") ?? new();
+
+            productos = await Http
+
+                .GetFromJsonAsync<List<ProductoOpcion>>(
+
+                    "api/Productos") ?? new();
+
+            return true;
+
+        }
+
+        catch (Exception)
+
+        {
+
+            error = "No se pudieron cargar clientes, empleados o productos.";
+
+            return false;
+
+        }
+
+    }
+
+    private async Task<VentaCompleta?> BuscarVenta(int id)
+
+    {
+
+        try
+
+        {
+
+            return await Http
+
+                .GetFromJsonAsync<VentaCompleta>(
+
+                    $"api/Ventas/{id}");
+
+        }
+
+        catch (Exception)
+
+        {
+
+            return null;
+
+        }
+
+    }
+
+    // ========================================
+
+    // NUEVA VENTA
+
+    // ========================================
+
+    // ============================================================
+    // CLIENTES EN VENTAS / CONSUMIDOR FINAL
+    // ============================================================
+    // Ignorar guion y espacios al comparar; no confundir mayúscula K.
+    private static string NormalizarNitBusqueda(string? valor) =>
+        new string((valor ?? "").Trim().ToUpperInvariant()
+            .Where(c => c != '-' && !char.IsWhiteSpace(c)).ToArray());
+
+    private static string NitConGuion(string? valor)
+    {
+        var limpio = NormalizarNitBusqueda(valor);
+        return limpio.Length > 1
+            ? limpio[..^1] + "-" + limpio[^1]
+            : limpio;
+    }
+
+    // Búsqueda instantánea por nombre, apellido o NIT (con o sin guion).
+    private List<ClienteOpcion> ClientesCoincidentes
+    {
+        get
+        {
+            string texto = nitBusqueda.Trim();
+            if (texto.Length < 2) return new();
+            string nitBuscado = NormalizarNitBusqueda(texto);
+
+            return clientes
+                .Where(c => !EsClienteCF(c) &&
+                    (c.Estado == true || (editando && c.IdCliente == idClienteOriginalEdicion)) &&
+                    (
+                        c.Nombre.Contains(texto, StringComparison.OrdinalIgnoreCase) ||
+                        c.Apellido.Contains(texto, StringComparison.OrdinalIgnoreCase) ||
+                        ($"{c.Nombre} {c.Apellido}").Contains(texto, StringComparison.OrdinalIgnoreCase) ||
+                        (!string.IsNullOrWhiteSpace(c.Nit) &&
+                         NormalizarNitBusqueda(c.Nit).Contains(nitBuscado, StringComparison.OrdinalIgnoreCase))
+                    ))
+                .OrderBy(c => c.Nombre)
+                .ThenBy(c => c.Apellido)
+                .Take(15)
+                .ToList();
+        }
+    }
+
+    private void ActualizarBusquedaCliente(ChangeEventArgs evento)
+    {
+        nitBusqueda = evento.Value?.ToString() ?? "";
+        mensajeNitBusqueda = null;
+        // La selección anterior deja de ser válida al buscar otra persona.
+        formulario.IdCliente = 0;
+    }
+
+    private void ElegirCliente(ClienteOpcion cliente)
+    {
+        if (guardando || !PuedeRegistrarVenta ||
+            (cliente.Estado != true && !(editando && cliente.IdCliente == idClienteOriginalEdicion)))
+            return;
+
+        formulario.IdCliente = cliente.IdCliente;
+        nitBusqueda = "";
+        mensajeNitBusqueda = null;
+        errorModal = null;
+    }
+
+    private async Task SeleccionarConsumidorFinal()
+    {
+        if (!PuedeRegistrarVenta || editando || guardando) return;
+        await CambiarTipoCliente(new ChangeEventArgs { Value = "CF" });
+    }
+
+    private static bool EsClienteCF(ClienteOpcion c) =>
+        string.Equals(c.Nombre.Trim(), "Consumidor", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(c.Apellido.Trim(), "Final", StringComparison.OrdinalIgnoreCase);
+
+    private async Task CambiarTipoCliente(ChangeEventArgs e)
+    {
+        if (!PuedeRegistrarVenta || editando) return;
+        tipoCliente = e.Value?.ToString() == "CF" ? "CF" : "REGISTRADO";
+        formulario.IdCliente = 0;
+        nitBusqueda = "";
+        mensajeNitBusqueda = null;
+        errorModal = null;
+        if (tipoCliente == "CF")
+        {
+            preparandoCF = true;
+            try
+            {
+                var cf = clientes.FirstOrDefault(EsClienteCF);
+                if (cf != null && cf.Estado != true)
+                {
+                    errorModal = "El registro Consumidor Final está inactivo. Solicitá a ADMIN que lo active.";
+                    return;
+                }
+                if (cf == null)
+                {
+                    // Primera vez: crear un único cliente genérico sin NIT.
+                    // Se reutiliza en ventas futuras; no se crean clientes por cada venta.
+                    using var respuesta = await Http.PostAsJsonAsync("api/Clientes", new
+                    {
+                        Nombre = "Consumidor", Apellido = "Final",
+                        Nit = (string?)null, Telefono = (string?)null,
+                        Correo = (string?)null, Direccion = (string?)null
+                    });
+                    if (!respuesta.IsSuccessStatusCode)
+                    {
+                        errorModal = await LeerError(respuesta);
+                        return;
+                    }
+                    var actualizados = await Http.GetFromJsonAsync<List<ClienteOpcion>>("api/Clientes");
+                    if (actualizados != null) clientes = actualizados;
+                    cf = clientes.FirstOrDefault(EsClienteCF);
+                }
+                if (cf == null || cf.IdCliente <= 0)
+                {
+                    errorModal = "No se pudo localizar el registro CF creado. Actualizá los clientes y revisá antes de repetir.";
+                    return;
+                }
+                formulario.IdCliente = cf.IdCliente;
+            }
+            catch (Exception)
+            {
+                errorModal = "No se pudo preparar Consumidor Final. Revisá la conexión con la API.";
+            }
+            finally
+            {
+                preparandoCF = false;
+            }
+        }
+    }
+
+    private void AbrirClienteRapido()
+    {
+        if (!PuedeRegistrarVenta || editando || guardando) return;
+        clienteRapido = new ClienteRapidoDto();
+        errorClienteRapido = null;
+        // Reutilizar el NIT buscado, evitando escribirlo dos veces.
+        // Si se buscó por nombre, abrimos el registro sin intentar usarlo como NIT.
+        // Únicamente precargamos NIT cuando el texto tiene formato numérico válido.
+        string nitSinGuion = NormalizarNitBusqueda(nitBusqueda);
+        if (Regex.IsMatch(nitSinGuion, @"^[0-9]{2,12}[0-9K]$"))
+        {
+            string formateado = NitConGuion(nitBusqueda);
+            if (!ClienteRapidoDto.NitValido(formateado))
+            {
+                mensajeNitBusqueda = "El NIT ingresado no es válido. Revisá el dígito verificador.";
+                return;
+            }
+            var yaExiste = clientes.FirstOrDefault(c =>
+                !string.IsNullOrWhiteSpace(c.Nit) &&
+                NormalizarNitBusqueda(c.Nit) == nitSinGuion);
+            if (yaExiste != null)
+            {
+                if (yaExiste.Estado == true)
+                {
+                    formulario.IdCliente = yaExiste.IdCliente;
+                    nitBusqueda = "";
+                    mensajeNitBusqueda = null;
+                }
+                else
+                    mensajeNitBusqueda = "El cliente existe, pero está inactivo. Solicitá a ADMIN activarlo.";
+                return;
+            }
+            clienteRapido.Nit = formateado;
+        }
+        mostrarClienteRapido = true;
+    }
+
+    private void CerrarClienteRapido()
+    {
+        if (guardandoCliente) return;
+        mostrarClienteRapido = false;
+        errorClienteRapido = null;
+    }
+
+    private static string? LimpiarOpcional(string? valor) =>
+        string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
+
+    private async Task GuardarClienteRapido()
+    {
+        if (!PuedeRegistrarVenta || editando || guardandoCliente) return;
+        if (string.IsNullOrWhiteSpace(clienteRapido.Nit) ||
+            string.IsNullOrWhiteSpace(clienteRapido.Correo) ||
+            string.IsNullOrWhiteSpace(clienteRapido.Direccion))
+        {
+            errorClienteRapido = "Para registrar al cliente completá NIT, correo electrónico y dirección.";
+            return;
+        }
+        guardandoCliente = true;
+        errorClienteRapido = null;
+        try
+        {
+            var datos = new
+            {
+                Nombre = clienteRapido.Nombre.Trim(),
+                Apellido = clienteRapido.Apellido.Trim(),
+                Nit = LimpiarOpcional(clienteRapido.Nit)?.ToUpperInvariant(),
+                Telefono = LimpiarOpcional(clienteRapido.Telefono),
+                Correo = LimpiarOpcional(clienteRapido.Correo)?.ToLowerInvariant(),
+                Direccion = LimpiarOpcional(clienteRapido.Direccion)
+            };
+            using var respuesta = await Http.PostAsJsonAsync("api/Clientes", datos);
+            if (!respuesta.IsSuccessStatusCode)
+            {
+                errorClienteRapido = await LeerError(respuesta);
+                return;
+            }
+            int nuevoId = 0;
+            using (var doc = JsonDocument.Parse(await respuesta.Content.ReadAsStringAsync()))
+            {
+                if (doc.RootElement.TryGetProperty("idCliente", out var propiedad) &&
+                    propiedad.TryGetInt32(out var id)) nuevoId = id;
+            }
+            // Refrescar el catálogo para que el nuevo cliente aparezca en el selector.
+            var actualizados = await Http.GetFromJsonAsync<List<ClienteOpcion>>("api/Clientes");
+            if (actualizados != null) clientes = actualizados;
+            var cliente = clientes.FirstOrDefault(c => c.IdCliente == nuevoId);
+            if (cliente == null)
+            {
+                errorClienteRapido = "El cliente fue guardado, pero no se pudo seleccionar. Cerrá y abrí Nueva Venta antes de volver a intentar.";
+                return;
+            }
+            tipoCliente = "REGISTRADO";
+            formulario.IdCliente = cliente.IdCliente;
+            nitBusqueda = "";
+            mensajeNitBusqueda = null;
+            mostrarClienteRapido = false;
+            errorModal = null;
+        }
+        catch (Exception)
+        {
+            errorClienteRapido = "No se pudo confirmar el registro. Revisá el listado de Clientes antes de intentar de nuevo.";
+        }
+        finally
+        {
+            guardandoCliente = false;
+        }
+    }
+
+    // Para la interfaz usamos el empleado vinculado a la sesión.
+    // El servidor debe verificar igualmente el idEmpleado del JWT.
+    private int ObtenerEmpleadoSesion()
+    {
+        var propiedad = typeof(SesionUsuario).GetProperty("IdEmpleado");
+        var idSesion = propiedad?.GetValue(Sesion);
+        if (int.TryParse(idSesion?.ToString(), out int id) && id > 0)
+            return empleados.Any(e => e.IdEmpleado == id && e.Estado == true) ? id : 0;
+
+        // Compatibilidad con versiones del servicio que solo guardan NombreCompleto.
+        var candidatos = empleados.Where(e => e.Estado == true &&
+            string.Equals($"{e.Nombre} {e.Apellido}".Trim(), Sesion.NombreCompleto?.Trim(),
+                StringComparison.OrdinalIgnoreCase)).ToList();
+        return candidatos.Count == 1 ? candidatos[0].IdEmpleado : 0;
+    }
+
+    private async Task AbrirNueva()
+
+    {
+        if (!PuedeRegistrarVenta) return;
+
+        if (!await CargarCatalogos())
+
+            return;
+
+        if (!empleados.Any(e => e.Estado == true))
+
+        {
+
+            error = "Debes registrar un empleado activo.";
+
+            return;
+
+        }
+
+        if (!productos.Any(p => p.Estado == true))
+
+        {
+
+            error = "Debes registrar un producto activo.";
+
+            return;
+
+        }
+
+        formulario = new FormularioVenta();
+        fechaVentaOriginal = DateTime.Now;
+        idClienteOriginalEdicion = 0;
+        tipoCliente = "REGISTRADO";
+        nitBusqueda = "";
+        mensajeNitBusqueda = null;
+        if (!PuedeAdministrar)
+        {
+            int idEmpleado = ObtenerEmpleadoSesion();
+            if (idEmpleado <= 0)
+            {
+                error = "No se pudo identificar al empleado de la sesión. Verificá su asociación con el usuario.";
+                return;
+            }
+            formulario.IdEmpleado = idEmpleado;
+        }
+        cantidadesOriginales = new();
+
+        editando = false;
+
+        idVentaEditar = 0;
+
+        errorModal = null;
+
+        mensaje = null;
+
+        error = null;
+
+        ultimaVentaId = null;
+
+        mostrarFormulario = true;
+
+    }
+
+    // ========================================
+
+    // EDITAR VENTA
+
+    // ========================================
+
+    private async Task AbrirEditar(int id)
+
+    {
+        if (!PuedeAdministrar) return;
+
+        if (!await CargarCatalogos())
+
+            return;
+
+        var venta = await BuscarVenta(id);
+
+        if (venta == null)
+
+        {
+
+            error = "No se pudo cargar la venta.";
+
+            return;
+
+        }
+
+        if (venta.Estado != "REGISTRADA")
+
+        {
+
+            error = "Solo se pueden editar ventas registradas.";
+
+            return;
+
+        }
+
+        fechaVentaOriginal = venta.FechaVenta;
+        idClienteOriginalEdicion = venta.IdCliente;
+        cantidadesOriginales = venta.Detalles
+
+            .GroupBy(d => d.IdProducto)
+
+            .ToDictionary(
+
+                g => g.Key,
+
+                g => g.Sum(d => (long)d.Cantidad));
+
+        nitBusqueda = "";
+        mensajeNitBusqueda = null;
+        formulario = new FormularioVenta
+
+        {
+
+            IdCliente = venta.IdCliente,
+
+            IdEmpleado = venta.IdEmpleado,
+
+            Observaciones = venta.Observaciones,
+
+            Detalles = venta.Detalles
+
+                .Select(d => new LineaVentaFormulario
+
+                {
+
+                    IdProducto = d.IdProducto,
+
+                    Cantidad = d.Cantidad,
+
+                    PrecioVenta = d.PrecioVenta
+
+                })
+
+                .ToList()
+
+        };
+
+        tipoCliente = clientes.Any(c => c.IdCliente == venta.IdCliente && EsClienteCF(c))
+            ? "CF" : "REGISTRADO";
+        editando = true;
+
+        idVentaEditar = id;
+
+        errorModal = null;
+
+        mensaje = null;
+
+        error = null;
+
+        ultimaVentaId = null;
+
+        mostrarFormulario = true;
+
+    }
+
+    private void CerrarFormulario()
+
+    {
+        if (mostrarClienteRapido) return;
+
+        if (guardando)
+
+            return;
+
+        mostrarFormulario = false;
+
+        errorModal = null;
+
+    }
+
+    // ========================================
+
+    // AGREGAR Y QUITAR PRODUCTOS
+
+    // ========================================
+
+    private void AgregarLinea()
+
+    {
+
+        if (formulario.Detalles.Count >= 50)
+
+        {
+
+            errorModal = "Máximo 50 productos por venta.";
+
+            return;
+
+        }
+
+        formulario.Detalles.Add(new LineaVentaFormulario());
+
+        errorModal = null;
+
+    }
+
+    private void QuitarLinea(Guid clave)
+
+    {
+
+        if (formulario.Detalles.Count <= 1)
+
+            return;
+
+        var linea = formulario.Detalles
+
+            .FirstOrDefault(l => l.Clave == clave);
+
+        if (linea != null)
+
+            formulario.Detalles.Remove(linea);
+
+        errorModal = null;
+
+    }
+
+    // Filtro independiente para cada línea de venta. Siempre conserva el producto elegido.
+    private IEnumerable<ProductoOpcion> ProductosFiltradosVenta(LineaVentaFormulario linea)
+    {
+        string filtro = linea.BusquedaProducto?.Trim() ?? "";
+        return productos
+            .Where(p => (p.Estado == true || p.IdProducto == linea.IdProducto) &&
+                (filtro.Length == 0 || p.IdProducto == linea.IdProducto ||
+                 p.Codigo.Contains(filtro, StringComparison.OrdinalIgnoreCase) ||
+                 p.Descripcion.Contains(filtro, StringComparison.OrdinalIgnoreCase)))
+            .OrderBy(p => p.Codigo);
+    }
+
+    private void SeleccionarProducto(
+
+        LineaVentaFormulario linea,
+
+        ChangeEventArgs e)
+
+    {
+
+        if (!int.TryParse(e.Value?.ToString(), out int id))
+
+            id = 0;
+
+        linea.IdProducto = id;
+
+        var producto = productos
+
+            .FirstOrDefault(p => p.IdProducto == id);
+
+        linea.PrecioVenta = producto?.PrecioVenta ?? 0m;
+
+        errorModal = null;
+
+    }
+
+    // ========================================
+
+    // VALIDACIONES DE VENTA
+
+    // ========================================
+
+    // Límite solicitado: CF admite hasta Q2,500.00 inclusive.
+    private const decimal LimiteVentaCF = 2500.00m;
+
+    private bool EsVentaConsumidorFinal =>
+        tipoCliente == "CF" || clientes.Any(c =>
+            c.IdCliente == formulario.IdCliente && EsClienteCF(c));
+
+    private bool SuperaLimiteConsumidorFinal =>
+        EsVentaConsumidorFinal && TotalFormulario > LimiteVentaCF;
+
+    private string? ValidarVenta()
+
+    {
+
+        var ventaAnterior = editando
+
+            ? ventas.FirstOrDefault(v => v.IdVenta == idVentaEditar)
+
+            : null;
+
+        bool clienteValido = clientes.Any(c =>
+
+            c.IdCliente == formulario.IdCliente &&
+
+            (c.Estado == true ||
+
+             (editando && c.IdCliente == ventaAnterior?.IdCliente)));
+
+        if (!clienteValido)
+
+            return "Selecciona un cliente activo y válido.";
+
+        bool empleadoValido = empleados.Any(e =>
+
+            e.IdEmpleado == formulario.IdEmpleado &&
+
+            (e.Estado == true ||
+
+             (editando && e.IdEmpleado == ventaAnterior?.IdEmpleado)));
+
+        if (!empleadoValido)
+
+            return "Selecciona un empleado activo y válido.";
+
+        if (formulario.Observaciones?.Trim().Length > 255)
+
+            return "Las observaciones no deben superar 255 caracteres.";
+
+        if (formulario.Detalles.Count == 0)
+
+            return "Agrega al menos un producto.";
+
+        if (formulario.Detalles.Count > 50)
+
+            return "Máximo 50 productos por venta.";
+
+        var seleccionados = new HashSet<int>();
+
+        decimal total = 0m;
+
+        foreach (var linea in formulario.Detalles)
+
+        {
+
+            var producto = productos
+
+                .FirstOrDefault(p => p.IdProducto == linea.IdProducto);
+
+            if (producto == null)
+
+                return "Selecciona un producto en cada fila.";
+
+            if (!seleccionados.Add(linea.IdProducto))
+
+                return $"El producto {producto.Codigo} está repetido.";
+
+            long cantidadAnterior = editando
+
+                ? cantidadesOriginales.GetValueOrDefault(linea.IdProducto)
+
+                : 0;
+
+            if (producto.Estado != true &&
+
+                linea.Cantidad > cantidadAnterior)
+
+            {
+
+                return $"El producto {producto.Codigo} está inactivo.";
+
+            }
+
+            if (linea.Cantidad < 1 || linea.Cantidad > 1000000)
+
+            {
+
+                return $"Cantidad inválida para {producto.Codigo}.";
+
+            }
+
+            if (linea.PrecioVenta <= 0 ||
+
+                linea.PrecioVenta > 9999999999.99m ||
+
+                decimal.Round(linea.PrecioVenta, 2) != linea.PrecioVenta)
+
+            {
+
+                return $"Precio inválido para {producto.Codigo}. Usa máximo dos decimales.";
+
+            }
+
+            long disponible =
+
+                (long)producto.Existencia + cantidadAnterior;
+
+            if (linea.Cantidad > disponible)
+
+            {
+
+                return $"No hay existencias suficientes de {producto.Codigo}. Disponibles: {disponible}.";
+
+            }
+
+            decimal subtotal =
+
+                linea.Cantidad * linea.PrecioVenta;
+
+            if (subtotal > 9999999999.99m)
+
+                return $"El subtotal de {producto.Codigo} supera el límite.";
+
+            total += subtotal;
+
+            if (total > 9999999999.99m)
+
+                return "El total de la venta supera el límite.";
+
+        }
+
+        if (SuperaLimiteConsumidorFinal ||
+            (EsVentaConsumidorFinal && total > LimiteVentaCF))
+        {
+            return "No se permiten ventas mayores de Q2,500.00 a Consumidor Final (CF). Seleccioná o registrá un cliente con NIT válido.";
+        }
+
+        return null;
+
+    }
+
+    // ========================================
+
+    // GUARDAR VENTA
+
+    // ========================================
+
+    private async Task GuardarVenta()
+    {
+        if (!PuedeRegistrarVenta || (editando && !PuedeAdministrar)) return;
+        if (tipoCliente == "CF" && preparandoCF) return;
+
+        if (!PuedeAdministrar)
+        {
+            int idEmpleado = ObtenerEmpleadoSesion();
+            if (idEmpleado <= 0)
+            {
+                errorModal = "No se pudo identificar el empleado del usuario conectado.";
+                return;
+            }
+
+            formulario.IdEmpleado = idEmpleado;
+            foreach (var linea in formulario.Detalles)
+            {
+                var producto = productos.FirstOrDefault(p => p.IdProducto == linea.IdProducto);
+                if (producto != null) linea.PrecioVenta = producto.PrecioVenta;
+            }
+        }
+
+        if (guardando) return;
+
+        guardando = true;
+        errorModal = null;
+
+        // La pestaña se reserva DURANTE el envío del formulario, antes del POST.
+        // Abrirla después de esperar a la API suele activar el bloqueador de ventanas.
+        string? ventanaComprobante = null;
+        bool ventanaBloqueada = false;
+        bool ventaGuardada = false;
+
+        try
+        {
+            string? validacion = ValidarVenta();
+            if (validacion != null)
+            {
+                errorModal = validacion;
+                return;
+            }
+
+            if (!editando)
+            {
+                try
+                {
+                    moduloComprobantes ??= await JS.InvokeAsync<Microsoft.JSInterop.IJSObjectReference>(
+                        "import", "./js/comprobantes.js");
+                    ventanaComprobante = await moduloComprobantes.InvokeAsync<string?>("prepararVistaPdf");
+                    ventanaBloqueada = string.IsNullOrWhiteSpace(ventanaComprobante);
+                }
+                catch (Microsoft.JSInterop.JSException)
+                {
+                    // Un bloqueador o un módulo JS no disponible no deben cancelar la venta.
+                    ventanaBloqueada = true;
+                }
+            }
+
+            formulario.Observaciones = string.IsNullOrWhiteSpace(formulario.Observaciones)
+                ? null
+                : formulario.Observaciones.Trim();
+
+            HttpResponseMessage respuesta;
+            if (editando)
+            {
+                respuesta = await Http.PutAsJsonAsync($"api/Ventas/{idVentaEditar}", formulario);
+            }
+            else
+            {
+                respuesta = await Http.PostAsJsonAsync("api/Ventas", formulario);
+            }
+
+            using (respuesta)
+            {
+                if (!respuesta.IsSuccessStatusCode)
+                {
+                    errorModal = await LeerError(respuesta);
+                    return;
+                }
+
+                ventaGuardada = true;
+
+                if (editando)
+                {
+                    ultimaVentaId = idVentaEditar;
+                }
+                else
+                {
+                    var resultado = await respuesta.Content.ReadFromJsonAsync<RespuestaGuardarVenta>();
+                    ultimaVentaId = resultado?.IdVenta > 0 ? resultado.IdVenta : null;
+                }
+            }
+
+            // Mostrar el comprobante enseguida, sin necesidad de presionar "Imprimir PDF".
+            // El endpoint sigue protegido por JWT; el token nunca va en la URL.
+            if (!editando && !ultimaVentaId.HasValue)
+                ventanaBloqueada = true;
+
+            if (!editando && ultimaVentaId is int idNuevaVenta &&
+                !string.IsNullOrWhiteSpace(ventanaComprobante))
+            {
+                string ventanaYaReservada = ventanaComprobante;
+                ventanaComprobante = null;
+                await GestionarComprobante(idNuevaVenta, false, ventanaYaReservada);
+            }
+
+            bool ventasActualizadas = await CargarVentas();
+            bool catalogosActualizados = await CargarCatalogos();
+            mostrarFormulario = false;
+
+            if (ventasActualizadas && catalogosActualizados)
+            {
+                mensaje = editando
+                    ? "Venta actualizada correctamente. Ya podés reimprimir el comprobante."
+                    : ventanaBloqueada
+                        ? "Venta registrada correctamente. Permití ventanas emergentes para este sitio y usá «Ver / Imprimir PDF» para abrir el comprobante."
+                        : "Venta registrada correctamente. Se solicitó abrir el PDF automáticamente; también podés verlo o descargarlo desde esta pantalla.";
+            }
+            else
+            {
+                error = "La venta fue guardada, pero no se pudo actualizar el listado. Recargá la página.";
+            }
+        }
+        catch (Exception)
+        {
+            errorModal = ventaGuardada
+                ? "La venta fue guardada, pero ocurrió un problema al actualizar la pantalla. Revisá el listado antes de intentar nuevamente."
+                : "No fue posible completar la operación. Revisá la API y el listado antes de intentar guardar nuevamente.";
+        }
+        finally
+        {
+            // Si el POST falló o no devolvió ID, cerrar la pestaña provisional.
+            // Nunca se deja abierto un PDF vacío ni se registra una segunda venta.
+            if (!string.IsNullOrWhiteSpace(ventanaComprobante) && moduloComprobantes != null)
+            {
+                try
+                {
+                    await moduloComprobantes.InvokeVoidAsync("cerrarVistaPdf", ventanaComprobante);
+                }
+                catch (Microsoft.JSInterop.JSException) { }
+            }
+            guardando = false;
+        }
+    }
+
+    // ========================================
+
+    // ========================================
+
+    // VER DETALLE
+
+    // ========================================
+
+    private async Task VerDetalle(int id)
+
+    {
+
+        mostrarDetalle = true;
+
+        cargandoDetalle = true;
+
+        errorDetalle = null;
+
+        detalleSeleccionado = null;
+
+        try
+
+        {
+
+            detalleSeleccionado = await BuscarVenta(id);
+
+            if (detalleSeleccionado == null)
+
+                errorDetalle = "No se pudo cargar el detalle.";
+
+        }
+
+        finally
+
+        {
+
+            cargandoDetalle = false;
+
+        }
+
+    }
+
+    private void CerrarDetalle()
+
+    {
+
+        if (cargandoDetalle)
+
+            return;
+
+        mostrarDetalle = false;
+
+        detalleSeleccionado = null;
+
+    }
+
+    // ========================================
+
+    // ANULAR VENTA
+
+    // ========================================
+
+    private void PedirAnulacion(VentaResumen venta)
+
+    {
+        if (!PuedeAdministrar) return;
+
+        ventaAnular = venta;
+
+        errorAnulacion = null;
+
+    }
+
+    private void CerrarAnulacion()
+
+    {
+
+        if (anulando)
+
+            return;
+
+        ventaAnular = null;
+
+        errorAnulacion = null;
+
+    }
+
+    private async Task ConfirmarAnulacion()
+
+    {
+        if (!PuedeAdministrar) return;
+
+        if (ventaAnular == null || anulando)
+
+            return;
+
+        anulando = true;
+
+        errorAnulacion = null;
+
+        try
+
+        {
+
+            int id = ventaAnular.IdVenta;
+
+            using var respuesta = await Http.PutAsync(
+
+                $"api/Ventas/{id}/anular",
+
+                null);
+
+            if (!respuesta.IsSuccessStatusCode)
+
+            {
+
+                errorAnulacion = await LeerError(respuesta);
+
+                return;
+
+            }
+
+            bool ventasActualizadas = await CargarVentas();
+
+            bool catalogosActualizados = await CargarCatalogos();
+
+            ventaAnular = null;
+
+            ultimaVentaId = id;
+
+            if (ventasActualizadas && catalogosActualizados)
+
+            {
+
+                mensaje = "Venta anulada. El comprobante ahora aparecerá marcado como ANULADA.";
+
+            }
+
+            else
+
+            {
+
+                error = "La venta fue anulada, pero no se pudo actualizar el listado. Recargá la página.";
+
+            }
+
+        }
+
+        catch (Exception)
+
+        {
+
+            errorAnulacion = "No se pudo anular la venta. Revisá la API.";
+
+        }
+
+        finally
+
+        {
+
+            anulando = false;
+
+        }
+
+    }
+
+    // ========================================
+
+    // MENSAJES DE ERROR DE LA API
+
+    // ========================================
+
+    private static async Task<string> LeerError(
+
+        HttpResponseMessage respuesta)
+
+    {
+
+        string contenido =
+
+            await respuesta.Content.ReadAsStringAsync();
+
+        try
+
+        {
+
+            using var documento = JsonDocument.Parse(contenido);
+
+            var raiz = documento.RootElement;
+
+            if (raiz.TryGetProperty("mensaje", out var mensajeApi))
+
+            {
+
+                string? texto = mensajeApi.GetString();
+
+                if (!string.IsNullOrWhiteSpace(texto))
+
+                    return texto;
+
+            }
+
+            if (raiz.TryGetProperty("errors", out var errores) &&
+
+                errores.ValueKind == JsonValueKind.Object)
+
+            {
+
+                foreach (var campo in errores.EnumerateObject())
+
+                {
+
+                    if (campo.Value.ValueKind != JsonValueKind.Array)
+
+                        continue;
+
+                    foreach (var detalle in campo.Value.EnumerateArray())
+
+                    {
+
+                        if (detalle.ValueKind == JsonValueKind.String)
+
+                        {
+
+                            return detalle.GetString()
+
+                                ?? "Los datos no son válidos.";
+
+                        }
+
+                    }
+
+                }
+
+            }
+
+        }
+
+        catch (JsonException)
+
+        {
+
+            // La respuesta no es JSON.
+
+        }
+
+        return $"No se pudo completar la operación. HTTP {(int)respuesta.StatusCode}.";
+
+    }
+
+}

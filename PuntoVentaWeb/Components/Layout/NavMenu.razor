@@ -1,0 +1,303 @@
+﻿
+@using PuntoVentaWeb.Servicios
+@using System.Linq
+@inject SesionUsuario Sesion
+@inject NavigationManager Navegacion
+
+<!-- ======================================== -->
+<!-- ENCABEZADO DEL MENÚ                      -->
+<!-- ======================================== -->
+<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/">
+            Sistema Punto de Venta
+        </a>
+    </div>
+</div>
+
+<input type="checkbox"
+       title="Navigation menu"
+       class="navbar-toggler" />
+
+<div class="nav-scrollable"
+     onclick="if (event.target.closest('a.nav-link')) document.querySelector('.navbar-toggler')?.click()">
+
+    <!-- ==================================== -->
+    <!-- DATOS DEL USUARIO CONECTADO          -->
+    <!-- ==================================== -->
+    @if (Sesion.EstaAutenticado)
+    {
+        <div class="mx-3 mt-3 mb-3 p-3"
+             style="background:#ffffff15;
+                    border-radius:10px;
+                    color:white;">
+
+            <div class="small"
+                 style="color:#d1d5db;">
+                Sesión iniciada
+            </div>
+
+            <div class="fw-bold mt-1">
+                @Sesion.NombreCompleto
+            </div>
+
+            <div class="small mt-1">
+                Usuario: @Sesion.Usuario
+            </div>
+
+            <span class="badge bg-primary mt-2">
+                @Sesion.Rol
+            </span>
+        </div>
+    }
+
+    <!-- ==================================== -->
+    <!-- MENÚ DINÁMICO DESDE MYSQL            -->
+    <!-- ==================================== -->
+    <nav class="nav flex-column">
+
+        @if (Sesion.EstaAutenticado)
+        {
+            @if (!Sesion.MenuCargado)
+            {
+                <!-- ======================== -->
+                <!-- ERROR AL CARGAR MENÚ     -->
+                <!-- ======================== -->
+                <div class="mx-3 mt-3 mb-3 p-3"
+                     style="background:#ffffff15;
+                            border-radius:10px;
+                            color:white;">
+
+                    <div class="small mb-2">
+                        No se pudieron cargar las opciones del menú.
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(Sesion.ErrorMenu))
+                    {
+                        <div class="small mb-3"
+                             style="color:#fca5a5;">
+                            @Sesion.ErrorMenu
+                        </div>
+                    }
+
+                    <button type="button"
+                            class="btn btn-outline-light btn-sm w-100"
+                            @onclick="ReintentarCargarMenu">
+                        Reintentar
+                    </button>
+                </div>
+            }
+            else if (Sesion.OpcionesMenu.Count == 0)
+            {
+                <!-- ======================== -->
+                <!-- USUARIO SIN OPCIONES     -->
+                <!-- ======================== -->
+                <div class="mx-3 mt-3 mb-3 p-3"
+                     style="background:#ffffff15;
+                            border-radius:10px;
+                            color:white;">
+
+                    <div class="small">
+                        No hay opciones de menú asignadas a tu rol.
+                    </div>
+                </div>
+            }
+            else
+            {
+                <!-- ======================== -->
+                <!-- MENÚS PRINCIPALES        -->
+                <!-- ======================== -->
+                @foreach (var opcion in ObtenerMenusPrincipales())
+                {
+                    var hijos = ObtenerMenusHijos(opcion.IdMenu);
+
+                    <div class="nav-item px-3"
+                         @key="opcion.IdMenu">
+
+                        @if (hijos.Count > 0)
+                        {
+                            <!-- ======================== -->
+                            <!-- MENÚ PADRE              -->
+                            <!-- ======================== -->
+                            <button type="button"
+                                    class="nav-link text-start"
+                                    style="cursor:pointer;
+                                           color:#d7d7d7;"
+                                    aria-expanded="@(EstaAbierto(opcion.IdMenu) ? "true" : "false")"
+                                    @onclick="() => AlternarMenu(opcion.IdMenu)">
+
+                                <span class="@($"bi {opcion.Icono}")"
+                                      aria-hidden="true">
+                                </span>
+
+                                <span class="flex-grow-1">
+                                    @opcion.Nombre
+                                </span>
+
+                                <span class="bi ms-auto"
+                                      style="margin-right:0;"
+                                      aria-hidden="true">
+
+                                    @if (EstaAbierto(opcion.IdMenu))
+                                    {
+                                        <span class="bi-chevron-down"></span>
+                                    }
+                                    else
+                                    {
+                                        <span class="bi-chevron-right"></span>
+                                    }
+                                </span>
+                            </button>
+
+                            <!-- ======================== -->
+                            <!-- SUBMENÚS                -->
+                            <!-- ======================== -->
+                            @if (EstaAbierto(opcion.IdMenu))
+                            {
+                                <div class="ms-3"
+                                     style="border-left:1px solid #ffffff35;
+                                            padding-left:5px;">
+
+                                    @foreach (var hijo in hijos)
+                                    {
+                                        <div class="nav-item ps-2"
+                                             @key="hijo.IdMenu">
+
+                                            <NavLink class="nav-link"
+                                                     href="@hijo.Ruta"
+                                                     Match="@(string.IsNullOrWhiteSpace(hijo.Ruta)
+                                                         ? NavLinkMatch.All
+                                                         : NavLinkMatch.Prefix)">
+
+                                                <span class="@($"bi {hijo.Icono}")"
+                                                      aria-hidden="true">
+                                                </span>
+
+                                                @hijo.Nombre
+                                            </NavLink>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        }
+                        else
+                        {
+                            <!-- ======================== -->
+                            <!-- OPCIÓN SIN HIJOS        -->
+                            <!-- ======================== -->
+                            <NavLink class="nav-link"
+                                     href="@opcion.Ruta"
+                                     Match="@(string.IsNullOrWhiteSpace(opcion.Ruta)
+                                         ? NavLinkMatch.All
+                                         : NavLinkMatch.Prefix)">
+
+                                <span class="@($"bi {opcion.Icono}")"
+                                      aria-hidden="true">
+                                </span>
+
+                                @opcion.Nombre
+                            </NavLink>
+                        }
+                    </div>
+                }
+            }
+        }
+
+        <!-- ================================= -->
+        <!-- CERRAR SESIÓN                    -->
+        <!-- ================================= -->
+        @if (Sesion.EstaAutenticado)
+        {
+            <div class="nav-item px-3 mt-4 mb-4">
+
+                <button type="button"
+                        class="btn btn-outline-light w-100"
+                        @onclick="CerrarSesion">
+
+                    <span class="bi bi-box-arrow-right me-2"
+                          aria-hidden="true">
+                    </span>
+
+                    Cerrar sesión
+                </button>
+            </div>
+        }
+
+    </nav>
+</div>
+
+@code {
+
+    // ========================================
+    // CONTROL DE MENÚS ABIERTOS Y CERRADOS
+    // ========================================
+    private readonly HashSet<int> _menusCerrados = new();
+
+    // ========================================
+    // OBTENER MENÚS PRINCIPALES
+    // ========================================
+    private IEnumerable<OpcionMenuDinamica> ObtenerMenusPrincipales()
+    {
+        var idsDisponibles = Sesion.OpcionesMenu
+            .Select(x => x.IdMenu)
+            .ToHashSet();
+
+        return Sesion.OpcionesMenu
+            .Where(x =>
+                !x.IdMenuPadre.HasValue ||
+                !idsDisponibles.Contains(x.IdMenuPadre.Value))
+            .OrderBy(x => x.Orden)
+            .ThenBy(x => x.IdMenu);
+    }
+
+    // ========================================
+    // OBTENER HIJOS DE UN MENÚ PADRE
+    // ========================================
+    private List<OpcionMenuDinamica> ObtenerMenusHijos(int idMenuPadre)
+    {
+        return Sesion.OpcionesMenu
+            .Where(x => x.IdMenuPadre == idMenuPadre)
+            .OrderBy(x => x.Orden)
+            .ThenBy(x => x.IdMenu)
+            .ToList();
+    }
+
+    // ========================================
+    // VERIFICAR SI EL GRUPO ESTÁ ABIERTO
+    // ========================================
+    private bool EstaAbierto(int idMenu)
+    {
+        return !_menusCerrados.Contains(idMenu);
+    }
+
+    // ========================================
+    // ABRIR O CERRAR UN GRUPO
+    // ========================================
+    private void AlternarMenu(int idMenu)
+    {
+        if (!_menusCerrados.Add(idMenu))
+        {
+            _menusCerrados.Remove(idMenu);
+        }
+    }
+
+    // ========================================
+    // REINTENTAR CONSULTA DEL MENÚ
+    // ========================================
+    private async Task ReintentarCargarMenu()
+    {
+        await Sesion.CargarMenuAsync();
+    }
+
+    // ========================================
+    // CERRAR SESIÓN
+    // ========================================
+    private async Task CerrarSesion()
+    {
+        await Sesion.CerrarAsync();
+
+        Navegacion.NavigateTo(
+            "/login",
+            replace: true);
+    }
+}
