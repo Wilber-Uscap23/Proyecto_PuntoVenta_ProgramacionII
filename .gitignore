@@ -23,3 +23,6 @@
 # Archivos del sistema
 .DS_Store
 Thumbs.db
+# Configuraciones privadas
+**/appsettings.json
+**/appsettings.Development.json
