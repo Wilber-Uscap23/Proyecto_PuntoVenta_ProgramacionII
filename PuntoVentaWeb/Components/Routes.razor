@@ -1,0 +1,163 @@
+﻿@using PuntoVentaWeb.Servicios
+@inject SesionUsuario Sesion
+@inject NavigationManager Navegacion
+
+<Router AppAssembly="typeof(Program).Assembly"
+        NotFoundPage="typeof(Pages.NotFound)">
+
+    <Found Context="routeData">
+
+        @if (!Sesion.Inicializada)
+        {
+            <!-- ============================ -->
+            <!-- VERIFICANDO SESIÓN           -->
+            <!-- ============================ -->
+            <div class="min-vh-100 d-flex align-items-center justify-content-center">
+                <div class="text-center">
+
+                    <div class="spinner-border text-primary mb-3"
+                         role="status">
+                    </div>
+
+                    <p class="text-muted">
+                        Verificando sesión...
+                    </p>
+
+                </div>
+            </div>
+        }
+        else if (routeData.PageType == typeof(Pages.Login))
+        {
+            <!-- ============================ -->
+            <!-- PANTALLA DE LOGIN            -->
+            <!-- ============================ -->
+            <RouteView RouteData="routeData"
+                       DefaultLayout="typeof(Layout.MainLayout)" />
+        }
+        else if (!Sesion.EstaAutenticado)
+        {
+            <!-- ============================ -->
+            <!-- USUARIO NO AUTENTICADO       -->
+            <!-- ============================ -->
+            <RedirigirAlLogin />
+        }
+        else if (!Sesion.MenuCargado)
+        {
+            <!-- ============================ -->
+            <!-- MENÚ NO DISPONIBLE           -->
+            <!-- ============================ -->
+            <LayoutView Layout="typeof(Layout.MainLayout)">
+
+                <div class="container mt-5">
+
+                    <div class="alert alert-warning">
+
+                        <h5>
+                            No se pudieron verificar los permisos.
+                        </h5>
+
+                        <p>
+                            @Sesion.ErrorMenu
+                        </p>
+
+                        <button type="button"
+                                class="btn btn-primary"
+                                @onclick="ReintentarMenu">
+
+                            Reintentar
+                        </button>
+
+                    </div>
+
+                </div>
+
+            </LayoutView>
+        }
+        else if (
+            routeData.PageType != typeof(Pages.NotFound) &&
+            routeData.PageType != typeof(Pages.Error) &&
+            !TienePermisoRuta())
+        {
+            <!-- ============================ -->
+            <!-- ACCESO DENEGADO              -->
+            <!-- ============================ -->
+            <LayoutView Layout="typeof(Layout.MainLayout)">
+                <AccesoDenegado />
+            </LayoutView>
+        }
+        else
+        {
+            <!-- ============================ -->
+            <!-- PÁGINA AUTORIZADA            -->
+            <!-- ============================ -->
+            <RouteView RouteData="routeData"
+                       DefaultLayout="typeof(Layout.MainLayout)" />
+
+            <FocusOnNavigate RouteData="routeData"
+                             Selector="h1" />
+        }
+
+    </Found>
+</Router>
+
+@code {
+
+    // ========================================
+    // VERIFICAR ACCESO SEGÚN EL MENÚ DE MYSQL
+    // ========================================
+    private bool TienePermisoRuta()
+    {
+        if (!Sesion.EstaAutenticado ||
+            !Sesion.MenuCargado)
+        {
+            return false;
+        }
+
+        // Obtener la ruta actual del navegador.
+        string rutaActual =
+            Navegacion.ToBaseRelativePath(
+                Navegacion.Uri);
+
+        // Quitar parámetros y fragmentos.
+        int indice = rutaActual.IndexOfAny(
+            new[] { '?', '#' });
+
+        if (indice >= 0)
+        {
+            rutaActual = rutaActual[..indice];
+        }
+
+        // Normalizar la ruta.
+        rutaActual = rutaActual.Trim('/');
+
+        // Validar contra las opciones autorizadas
+        // obtenidas desde la API.
+        return Sesion.OpcionesMenu.Any(opcion =>
+            string.Equals(
+                opcion.Ruta.Trim('/'),
+                rutaActual,
+                StringComparison.OrdinalIgnoreCase));
+    }
+
+    // ========================================
+    // REINTENTAR CONSULTA DE PERMISOS
+    // ========================================
+    private async Task ReintentarMenu()
+    {
+        await Sesion.CargarMenuAsync();
+    }
+
+    // ========================================
+    // RESTAURAR SESIÓN AL ABRIR LA WEB
+    // ========================================
+    protected override async Task OnAfterRenderAsync(
+        bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Sesion.RestaurarAsync();
+
+            StateHasChanged();
+        }
+    }
+}

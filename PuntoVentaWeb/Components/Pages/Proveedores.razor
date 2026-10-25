@@ -1,0 +1,944 @@
+@page "/proveedores"
+@rendermode InteractiveServer
+@using System.Net.Http.Json
+@using System.ComponentModel.DataAnnotations
+@using System.Text.Json
+@using System.Text.RegularExpressions
+@using PuntoVentaWeb.Servicios
+@inject HttpClient Http
+@inject SesionUsuario Sesion
+<PageTitle>Proveedores - Sistema Punto de Venta</PageTitle>
+@if (!PuedeConsultar)
+{
+    <div class="container mt-5">
+        <div class="alert alert-warning" role="alert">
+            <h4 class="alert-heading">Acceso restringido</h4>
+            Este módulo está disponible para ADMIN y CONSULTA.
+            Tu usuario no tiene permiso para consultar proveedores.
+        </div>
+    </div>
+}
+else
+{
+<div class="container-fluid mt-4">
+    <!-- ENCABEZADO -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2>Administración de Proveedores</h2>
+        </div>
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+            <a href="/compras" class="btn btn-outline-secondary">
+                ← Ir a Compras
+            </a>
+            @if (PuedeAdministrar)
+            {
+                <button type="button"
+                        class="btn btn-primary"
+                        @onclick="AbrirNuevo">
+                    + Nuevo Proveedor
+                </button>
+            }
+        </div>
+
+    </div>
+    <!-- MENSAJES -->
+    @if (!string.IsNullOrWhiteSpace(mensaje))
+    {
+        <div class="alert alert-success alert-dismissible">
+            @mensaje
+            <button type="button"
+                    class="btn-close"
+                    @onclick="() => mensaje = null">
+            </button>
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(error))
+    {
+        <div class="alert alert-danger alert-dismissible">
+            @error
+            <button type="button"
+                    class="btn-close"
+                    @onclick="() => error = null">
+            </button>
+        </div>
+    }
+
+    <!-- BUSCADOR Y FILTROS -->
+    <div class="card shadow-sm mb-3">
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-8">
+                    <label class="form-label">Buscar proveedor</label>
+                    <input class="form-control"
+                           placeholder="Buscar por nombre, NIT, correo o contacto..."
+                           @bind="busqueda"
+                           @bind:event="oninput" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Estado</label>
+                    <select class="form-select"
+                            @bind="filtroEstado">
+                        <option value="todos">Todos</option>
+                        <option value="activos">Activos</option>
+                        <option value="inactivos">Inactivos</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- LISTADO -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">Listado de Proveedores</h5>
+        </div>
+        <div class="card-body">
+            @if (cargando)
+            {
+                <p>Cargando proveedores...</p>
+            }
+
+            else if (!ProveedoresFiltrados.Any())
+            {
+                <div class="alert alert-info mb-0">
+                    No se encontraron proveedores.
+                </div>
+            }
+
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover align-middle">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>ID</th>
+                                <th>Proveedor</th>
+                                <th>NIT</th>
+                                <th>Teléfono</th>
+                                <th>Correo</th>
+                                <th>Contacto</th>
+                                <th>Dirección</th>
+                                <th>Registro</th>
+                                <th>Estado</th>
+                                @if (PuedeAdministrar)
+                                {
+                                    <th>Acciones</th>
+                                }
+
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var proveedor in ProveedoresFiltrados)
+                            {
+                                <tr>
+                                    <td>@proveedor.IdProveedor</td>
+                                    <td>
+                                        <strong>@proveedor.Nombre</strong>
+                                    </td>
+                                    <td>@Mostrar(proveedor.Nit)</td>
+                                    <td>@Mostrar(proveedor.Telefono)</td>
+                                    <td>@Mostrar(proveedor.Correo)</td>
+                                    <td>@Mostrar(proveedor.Contacto)</td>
+                                    <td>@Mostrar(proveedor.Direccion)</td>
+                                    <td>
+                                        @proveedor.FechaRegistro.ToString("dd/MM/yyyy")
+                                    </td>
+                                    <td>
+                                        @if (proveedor.Estado == true)
+                                        {
+                                            <span class="badge bg-success">
+                                                Activo
+                                            </span>
+                                        }
+
+                                        else
+                                        {
+                                            <span class="badge bg-danger">
+                                                Inactivo
+                                            </span>
+                                        }
+
+                                    </td>
+                                    @if (PuedeAdministrar)
+                                    {
+                                    <td>
+                                        <div class="d-flex gap-1">
+                                            <button type="button"
+                                                    class="btn btn-warning btn-sm"
+                                                    @onclick="() => AbrirEditar(proveedor)">
+                                                Editar
+                                            </button>
+                                            @if (proveedor.Estado == true)
+                                            {
+                                                <button type="button"
+                                                        class="btn btn-danger btn-sm"
+                                                        @onclick="() => AbrirConfirmacion(proveedor)">
+                                                    Desactivar
+                                                </button>
+                                            }
+
+                                            else
+                                            {
+                                                <button type="button"
+                                                        class="btn btn-success btn-sm"
+                                                        @onclick="() => AbrirConfirmacion(proveedor)">
+                                                    Activar
+                                                </button>
+                                            }
+
+                                        </div>
+                                    </td>
+                                    }
+
+                                </tr>
+                            }
+
+                        </tbody>
+                    </table>
+                </div>
+            }
+
+        </div>
+    </div>
+</div>
+<!-- ========================================= -->
+<!-- MODAL CREAR / EDITAR PROVEEDOR            -->
+<!-- ========================================= -->
+@if (mostrarModal && PuedeAdministrar)
+{
+    <div class="modal fade show d-block"
+         tabindex="-1"
+         role="dialog"
+         aria-modal="true"
+         aria-label="Formulario de proveedor">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title">
+                        @(editando
+                            ? "Editar Proveedor"
+                            : "Registrar Nuevo Proveedor")
+                    </h5>
+                    <button type="button"
+                            class="btn-close btn-close-white"
+                            disabled="@guardando"
+                            @onclick="CerrarModal">
+                    </button>
+                </div>
+                <EditForm Model="@formulario"
+                          OnValidSubmit="GuardarProveedor"
+                          FormName="proveedorForm">
+                    <DataAnnotationsValidator />
+                    <div class="modal-body">
+                        @if (!string.IsNullOrWhiteSpace(errorModal))
+                        {
+                            <div class="alert alert-danger">
+                                @errorModal
+                            </div>
+                        }
+
+                        <div class="row g-3">
+                            <!-- NOMBRE COMERCIAL -->
+                            <div class="col-12">
+                                <label class="form-label">
+                                    Nombre del proveedor *
+                                </label>
+                                <InputText class="form-control"
+                                           maxlength="150"
+                                           @bind-Value="formulario.Nombre" />
+                                <ValidationMessage
+                                    For="@(() => formulario.Nombre)"
+                                    class="text-danger" />
+                            </div>
+                            <!-- NIT -->
+                            <div class="col-md-6">
+                                <label class="form-label">NIT *</label>
+                                <InputText class="form-control"
+                                           maxlength="20"
+                                           @bind-Value="formulario.Nit" />
+                                <ValidationMessage
+                                    For="@(() => formulario.Nit)"
+                                    class="text-danger" />
+                            </div>
+                            <!-- TELÉFONO -->
+                            <div class="col-md-6">
+                                <label class="form-label">Teléfono *</label>
+                                <InputText type="tel"
+                                           class="form-control"
+                                           maxlength="20"
+                                           @bind-Value="formulario.Telefono" />
+                                <ValidationMessage
+                                    For="@(() => formulario.Telefono)"
+                                    class="text-danger" />
+                            </div>
+                            <!-- CORREO -->
+                            <div class="col-12">
+                                <label class="form-label">
+                                    Correo electrónico
+                                </label>
+                                <InputText type="email"
+                                           class="form-control"
+                                           maxlength="150"
+                                           @bind-Value="formulario.Correo" />
+                                <ValidationMessage
+                                    For="@(() => formulario.Correo)"
+                                    class="text-danger" />
+                            </div>
+                            <!-- CONTACTO -->
+                            <div class="col-12">
+                                <label class="form-label">
+                                    Persona de contacto
+                                </label>
+                                <InputText class="form-control"
+                                           maxlength="100"
+                                           @bind-Value="formulario.Contacto" />
+                                <ValidationMessage
+                                    For="@(() => formulario.Contacto)"
+                                    class="text-danger" />
+                            </div>
+                            <!-- DIRECCIÓN -->
+                            <div class="col-12">
+                                <label class="form-label">Dirección</label>
+                                <InputTextArea class="form-control"
+                                               rows="3"
+                                               maxlength="255"
+                                               @bind-Value="formulario.Direccion" />
+                                <ValidationMessage
+                                    For="@(() => formulario.Direccion)"
+                                    class="text-danger" />
+                            </div>
+                        </div>
+                        <p class="text-muted small mt-3 mb-0">
+                            Los campos marcados con * son obligatorios.
+                        </p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button"
+                                class="btn btn-secondary"
+                                disabled="@guardando"
+                                @onclick="CerrarModal">
+                            Cancelar
+                        </button>
+                        <button type="submit"
+                                class="btn btn-success"
+                                disabled="@guardando">
+                            @(guardando ? "Guardando..." :
+                                editando ? "Guardar Cambios" : "Guardar Proveedor")
+                        </button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+<!-- ========================================= -->
+<!-- MODAL CONFIRMACIÓN DE ESTADO              -->
+<!-- ========================================= -->
+@if (proveedorConfirmacion != null && PuedeAdministrar)
+{
+    <div class="modal fade show d-block"
+         tabindex="-1"
+         role="dialog"
+         aria-modal="true"
+         aria-label="Confirmar cambio de estado">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Confirmar Acción</h5>
+                    <button type="button"
+                            class="btn-close"
+                            disabled="@procesandoEstado"
+                            @onclick="CerrarConfirmacion">
+                    </button>
+                </div>
+                <div class="modal-body">
+                    @if (!string.IsNullOrWhiteSpace(errorConfirmacion))
+                    {
+                        <div class="alert alert-danger">
+                            @errorConfirmacion
+                        </div>
+                    }
+
+                    <p>
+                        ¿Estás segura de que deseas
+                        <strong>
+                            @(proveedorConfirmacion.Estado == true
+                                ? "desactivar" : "activar")
+                        </strong>
+                        al proveedor
+                        <strong>@proveedorConfirmacion.Nombre</strong>?
+                    </p>
+                    <p class="text-muted small mb-0">
+                        El proveedor continuará registrado
+                        y sus compras anteriores no se eliminarán.
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button"
+                            class="btn btn-secondary"
+                            disabled="@procesandoEstado"
+                            @onclick="CerrarConfirmacion">
+                        Cancelar
+                    </button>
+                    <button type="button"
+                            class="btn @(proveedorConfirmacion.Estado == true
+                                ? "btn-danger" : "btn-success")"
+                            disabled="@procesandoEstado"
+                            @onclick="CambiarEstado">
+                        @(procesandoEstado ? "Procesando..." :
+                            proveedorConfirmacion.Estado == true
+                                ? "Desactivar" : "Activar")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+}
+
+@code {
+    // ADMIN administra. CONSULTA únicamente revisa.
+    // VENDEDOR no tiene acceso a este módulo.
+    private bool PuedeAdministrar =>
+        Sesion.EstaAutenticado &&
+        string.Equals(Sesion.Rol, "ADMIN", StringComparison.OrdinalIgnoreCase);
+    private bool PuedeConsultar =>
+        Sesion.EstaAutenticado &&
+        (PuedeAdministrar ||
+         string.Equals(Sesion.Rol, "CONSULTA", StringComparison.OrdinalIgnoreCase));
+
+    // ========================================
+
+    // MODELO PARA CONSULTAS
+
+    // ========================================
+    public class ProveedorDto
+    {
+        public int IdProveedor { get; set; }
+        public string Nombre { get; set; } = string.Empty;
+        public string? Nit { get; set; }
+        public string? Telefono { get; set; }
+        public string? Correo { get; set; }
+        public string? Direccion { get; set; }
+        public string? Contacto { get; set; }
+        public DateTime FechaRegistro { get; set; }
+        public bool? Estado { get; set; }
+    }
+
+    // ========================================
+
+    // MODELO DE FORMULARIO Y VALIDACIONES
+
+    // ========================================
+    public class FormularioProveedor : IValidatableObject
+    {
+        [Required(ErrorMessage = "El nombre es obligatorio.")]
+        [StringLength(150, MinimumLength = 3,
+            ErrorMessage = "El nombre debe tener entre 3 y 150 caracteres.")]
+        [RegularExpression(@"^[\p{L}\p{N}\s.,&()/#'+\-]+$",
+            ErrorMessage = "El nombre contiene caracteres no permitidos.")]
+        public string Nombre { get; set; } = string.Empty;
+        [Required(ErrorMessage = "El NIT es obligatorio.")]
+        [StringLength(20)]
+        public string? Nit { get; set; }
+        [Required(ErrorMessage = "El teléfono es obligatorio.")]
+        [StringLength(20)]
+        public string? Telefono { get; set; }
+        [Required(ErrorMessage = "El correo electrónico es obligatorio.")]
+        [EmailAddress(ErrorMessage = "El correo no es válido.")]
+        [StringLength(150)]
+        [RegularExpression(@"^[^@\s]+@[^@\s]+.[^@\s]{2,}$",
+            ErrorMessage = "Ingresa un correo electrónico válido.")]
+        public string? Correo { get; set; }
+        [StringLength(255)]
+        public string? Direccion { get; set; }
+        [StringLength(100)]
+        public string? Contacto { get; set; }
+        public IEnumerable<ValidationResult> Validate(
+            ValidationContext validationContext)
+        {
+
+            // NO ACEPTAR NOMBRE SOLO CON NÚMEROS
+            if (!string.IsNullOrWhiteSpace(Nombre) &&
+                !Nombre.Any(char.IsLetter))
+            {
+                yield return new ValidationResult(
+                    "El proveedor debe tener un nombre válido que contenga letras.",
+                    new[] { nameof(Nombre) });
+            }
+
+            // VALIDACIÓN DE NIT
+            if (!string.IsNullOrWhiteSpace(Nit) &&
+                !NitValido(Nit))
+            {
+                yield return new ValidationResult(
+                    "El NIT debe contener de 8 a 10 digitos numericos.",
+                    new[] { nameof(Nit) });
+            }
+
+            // VALIDACIÓN DE TELÉFONO
+            if (!string.IsNullOrWhiteSpace(Telefono))
+            {
+                bool valido = Regex.IsMatch(
+                    Telefono.Trim(),
+                    @"^(?:\+502[ -]?)?[2-7][0-9]{3}[ -]?[0-9]{4}$");
+                if (!valido)
+                {
+                    yield return new ValidationResult(
+                        "Ingresa un teléfono válido. Ejemplo: 5555-1234.",
+                        new[] { nameof(Telefono) });
+                }
+
+            }
+
+            // VALIDACIÓN DE CONTACTO
+            if (!string.IsNullOrWhiteSpace(Contacto))
+            {
+                string texto = Contacto.Trim();
+                if (texto.Length < 2 ||
+                    !texto.Any(char.IsLetter) ||
+                    !Regex.IsMatch(texto, @"^[\p{L}\s.'-]+$"))
+                {
+                    yield return new ValidationResult(
+                        "El nombre de contacto debe contener letras, no números.",
+                        new[] { nameof(Contacto) });
+                }
+
+            }
+
+            // VALIDACIÓN DE DIRECCIÓN
+            if (!string.IsNullOrWhiteSpace(Direccion))
+            {
+                string texto = Direccion.Trim();
+                if (texto.Length < 5 || !texto.Any(char.IsLetter))
+                {
+                    yield return new ValidationResult(
+                        "Ingresa una dirección descriptiva de al menos 5 caracteres.",
+                        new[] { nameof(Direccion) });
+                }
+
+            }
+
+        }
+
+        // COMPROBAR EL DÍGITO VERIFICADOR
+        private static bool NitValido(string nit)
+        {
+            // Para registros de demostracion: sin validacion del digito verificador.
+            // Se permite escribir el guion, pero se cuentan solo los digitos.
+            string soloDigitos = Regex.Replace(nit.Trim(), @"[\s-]", "");
+            return Regex.IsMatch(soloDigitos, @"^[0-9]{8,10}$");
+        }
+
+    }
+
+    // ========================================
+
+    // VARIABLES Y ESTADOS
+
+    // ========================================
+    private List<ProveedorDto> proveedores = new();
+    private FormularioProveedor formulario = new();
+    private bool cargando = true;
+    private bool mostrarModal;
+    private bool editando;
+    private bool guardando;
+    private bool procesandoEstado;
+    private int idProveedorEditar;
+    private ProveedorDto? proveedorConfirmacion;
+    private string busqueda = string.Empty;
+    private string filtroEstado = "todos";
+    private string? mensaje;
+    private string? error;
+    private string? errorModal;
+    private string? errorConfirmacion;
+
+    // ========================================
+
+    // LISTADO FILTRADO
+
+    // ========================================
+    private IEnumerable<ProveedorDto> ProveedoresFiltrados =>
+        proveedores.Where(p =>
+            (
+                filtroEstado == "todos" ||
+                (filtroEstado == "activos" && p.Estado == true) ||
+                (filtroEstado == "inactivos" && p.Estado != true)
+            )
+            &&
+            (
+                string.IsNullOrWhiteSpace(busqueda) ||
+                p.Nombre.Contains(
+                    busqueda.Trim(),
+                    StringComparison.OrdinalIgnoreCase) ||
+                (p.Nit?.Contains(
+                    busqueda.Trim(),
+                    StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (p.Telefono?.Contains(
+                    busqueda.Trim(),
+                    StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (p.Correo?.Contains(
+                    busqueda.Trim(),
+                    StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (p.Contacto?.Contains(
+                    busqueda.Trim(),
+                    StringComparison.OrdinalIgnoreCase) ?? false)
+            )
+        ).OrderBy(p => p.IdProveedor);
+
+    // ========================================
+
+    // CARGA INICIAL
+
+    // ========================================
+    protected override async Task OnInitializedAsync()
+    {
+        if (PuedeConsultar)
+        {
+            await CargarProveedores();
+        }
+        else
+        {
+            cargando = false;
+        }
+    }
+
+    // ========================================
+
+    // CONSULTAR PROVEEDORES
+
+    // ========================================
+    private async Task<bool> CargarProveedores()
+    {
+        if (!PuedeConsultar)
+        {
+            proveedores.Clear();
+            cargando = false;
+            error = "No tenés permiso para consultar proveedores.";
+            return false;
+        }
+
+        cargando = true;
+        try
+        {
+            proveedores = await Http
+                .GetFromJsonAsync<List<ProveedorDto>>(
+                    "api/Proveedores") ?? new();
+            error = null;
+            return true;
+        }
+
+        catch (Exception)
+        {
+            error = "No se pudieron consultar los proveedores. Verifica la API.";
+            return false;
+        }
+
+        finally
+        {
+            cargando = false;
+        }
+
+    }
+
+    private static string Mostrar(string? valor)
+    {
+        return string.IsNullOrWhiteSpace(valor)
+            ? "—"
+            : valor;
+    }
+
+    // ========================================
+
+    // ABRIR NUEVO PROVEEDOR
+
+    // ========================================
+    private void AbrirNuevo()
+    {
+        if (!PuedeAdministrar)
+        {
+            error = "Solo ADMIN puede administrar proveedores.";
+            return;
+        }
+
+        formulario = new FormularioProveedor();
+        editando = false;
+        idProveedorEditar = 0;
+        errorModal = null;
+        mostrarModal = true;
+    }
+
+    // ========================================
+
+    // ABRIR EDITAR PROVEEDOR
+
+    // ========================================
+    private void AbrirEditar(ProveedorDto proveedor)
+    {
+        if (!PuedeAdministrar)
+        {
+            error = "Solo ADMIN puede editar proveedores.";
+            return;
+        }
+
+        formulario = new FormularioProveedor
+        {
+            Nombre = proveedor.Nombre,
+            Nit = proveedor.Nit,
+            Telefono = proveedor.Telefono,
+            Correo = proveedor.Correo,
+            Direccion = proveedor.Direccion,
+            Contacto = proveedor.Contacto
+        };
+
+        idProveedorEditar = proveedor.IdProveedor;
+        editando = true;
+        errorModal = null;
+        mostrarModal = true;
+    }
+
+    // ========================================
+
+    // CERRAR MODAL
+
+    // ========================================
+    private void CerrarModal()
+    {
+        if (guardando)
+            return;
+        mostrarModal = false;
+        errorModal = null;
+    }
+
+    // ========================================
+
+    // GUARDAR NUEVO O EDITAR PROVEEDOR
+
+    // ========================================
+    private async Task GuardarProveedor()
+    {
+        if (!PuedeAdministrar)
+        {
+            errorModal = "Solo ADMIN puede guardar proveedores.";
+            return;
+        }
+
+        if (guardando)
+            return;
+        guardando = true;
+        errorModal = null;
+        try
+        {
+            formulario.Nombre = formulario.Nombre.Trim();
+            formulario.Nit = Limpiar(formulario.Nit)?.ToUpperInvariant();
+            formulario.Telefono = Limpiar(formulario.Telefono);
+            formulario.Correo = Limpiar(formulario.Correo)?.ToLowerInvariant();
+            formulario.Contacto = Limpiar(formulario.Contacto);
+            formulario.Direccion = Limpiar(formulario.Direccion);
+            HttpResponseMessage respuesta;
+            if (editando)
+            {
+                respuesta = await Http.PutAsJsonAsync(
+                    $"api/Proveedores/{idProveedorEditar}",
+                    formulario);
+            }
+
+            else
+            {
+                respuesta = await Http.PostAsJsonAsync(
+                    "api/Proveedores", formulario);
+            }
+
+            if (!respuesta.IsSuccessStatusCode)
+            {
+                errorModal = await LeerError(respuesta);
+                return;
+            }
+
+            bool actualizado = await CargarProveedores();
+            mostrarModal = false;
+            if (actualizado)
+            {
+                mensaje = editando
+                    ? "Proveedor actualizado correctamente."
+                    : "Proveedor registrado correctamente.";
+            }
+
+        }
+
+        catch (Exception)
+        {
+            errorModal = "No fue posible guardar el proveedor. Verifica la API.";
+        }
+
+        finally
+        {
+            guardando = false;
+        }
+
+    }
+
+    // ========================================
+
+    // ABRIR CONFIRMACIÓN
+
+    // ========================================
+    private void AbrirConfirmacion(ProveedorDto proveedor)
+    {
+        if (!PuedeAdministrar)
+        {
+            error = "Solo ADMIN puede cambiar el estado de proveedores.";
+            return;
+        }
+
+        proveedorConfirmacion = proveedor;
+        errorConfirmacion = null;
+    }
+
+    // ========================================
+
+    // CERRAR CONFIRMACIÓN
+
+    // ========================================
+    private void CerrarConfirmacion()
+    {
+        if (procesandoEstado)
+            return;
+        proveedorConfirmacion = null;
+        errorConfirmacion = null;
+    }
+
+    // ========================================
+
+    // ACTIVAR Y DESACTIVAR
+
+    // ========================================
+    private async Task CambiarEstado()
+    {
+        if (!PuedeAdministrar)
+        {
+            errorConfirmacion = "Solo ADMIN puede cambiar el estado de proveedores.";
+            return;
+        }
+
+        if (proveedorConfirmacion == null || procesandoEstado)
+            return;
+        procesandoEstado = true;
+        errorConfirmacion = null;
+        try
+        {
+            int id = proveedorConfirmacion.IdProveedor;
+            bool activar = proveedorConfirmacion.Estado != true;
+            HttpResponseMessage respuesta;
+            if (activar)
+            {
+                respuesta = await Http.PutAsync(
+                    $"api/Proveedores/{id}/activar", null);
+            }
+
+            else
+            {
+                respuesta = await Http.DeleteAsync(
+                    $"api/Proveedores/{id}");
+            }
+
+            if (!respuesta.IsSuccessStatusCode)
+            {
+                errorConfirmacion = await LeerError(respuesta);
+                return;
+            }
+
+            bool actualizado = await CargarProveedores();
+            proveedorConfirmacion = null;
+            if (actualizado)
+            {
+                mensaje = activar
+                    ? "Proveedor activado correctamente."
+                    : "Proveedor desactivado correctamente.";
+            }
+
+        }
+
+        catch (Exception)
+        {
+            errorConfirmacion = "No fue posible conectar con la API.";
+        }
+
+        finally
+        {
+            procesandoEstado = false;
+        }
+
+    }
+
+    // ========================================
+
+    // LIMPIAR DATOS OPCIONALES
+
+    // ========================================
+    private static string? Limpiar(string? valor)
+    {
+        return string.IsNullOrWhiteSpace(valor)
+            ? null
+            : valor.Trim();
+    }
+
+    // ========================================
+
+    // LEER ERRORES DE LA API
+
+    // ========================================
+    private static async Task<string> LeerError(
+        HttpResponseMessage respuesta)
+    {
+        string contenido = await respuesta.Content.ReadAsStringAsync();
+        try
+        {
+            using var documento = JsonDocument.Parse(contenido);
+            var raiz = documento.RootElement;
+            if (raiz.TryGetProperty("mensaje", out var mensajeApi))
+            {
+                string? texto = mensajeApi.GetString();
+                if (!string.IsNullOrWhiteSpace(texto))
+                    return texto;
+            }
+
+            if (raiz.TryGetProperty("errors", out var errores) &&
+                errores.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var campo in errores.EnumerateObject())
+                {
+                    if (campo.Value.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var detalle in campo.Value.EnumerateArray())
+                        {
+                            if (detalle.ValueKind == JsonValueKind.String)
+                            {
+                                return detalle.GetString()
+                                    ?? "Los datos ingresados no son válidos.";
+                            }
+
+                        }
+
+                    }
+
+                }
+
+            }
+
+        }
+
+        catch (JsonException)
+        {
+
+            // La API no devolvió una respuesta JSON.
+        }
+
+        return $"No se pudo completar la operación. HTTP {(int)respuesta.StatusCode}.";
+    }
+
+}

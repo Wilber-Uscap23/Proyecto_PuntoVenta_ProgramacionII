@@ -1,0 +1,980 @@
+@page "/productos"
+@rendermode InteractiveServer
+@using System.Net.Http.Json
+@using System.Net.Http.Headers
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Components.Forms
+@using PuntoVentaWeb.Models
+@using PuntoVentaWeb.Servicios
+@inject HttpClient Http
+@inject SesionUsuario Sesion
+<PageTitle>Productos - Sistema Punto de Venta</PageTitle>
+<div class="container-fluid mt-4">
+    <!-- ENCABEZADO -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2>@(PuedeAdministrar ? "Administración de Productos" : "Consulta de Productos")</h2>
+        </div>
+        @if (PuedeAdministrar)
+        {
+            <button type="button" class="btn btn-primary"
+                    @onclick="AbrirNuevo">
+                + Nuevo Producto
+            </button>
+        }
+    </div>
+    <!-- MENSAJES -->
+    @if (!string.IsNullOrWhiteSpace(mensaje))
+    {
+        <div class="alert alert-success alert-dismissible">
+            @mensaje
+            <button type="button" class="btn-close"
+                    @onclick="() => mensaje = null">
+            </button>
+        </div>
+    }
+    @if (!string.IsNullOrWhiteSpace(error))
+    {
+        <div class="alert alert-danger alert-dismissible">
+            @error
+            <button type="button" class="btn-close"
+                    @onclick="() => error = null">
+            </button>
+        </div>
+    }
+    <!-- BÚSQUEDA Y FILTROS -->
+    <div class="card shadow-sm mb-3">
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-8">
+                    <label class="form-label">Buscar producto</label>
+                    <input class="form-control"
+                           placeholder="Buscar por código, descripción o marca..."
+                           @bind="busqueda"
+                           @bind:event="oninput" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Estado</label>
+                    <select class="form-select" @bind="filtroEstado">
+                        <option value="todos">Todos</option>
+                        <option value="activos">Activos</option>
+                        <option value="inactivos">Inactivos</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- LISTADO -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">Listado de Productos</h5>
+        </div>
+        <div class="card-body">
+            @if (cargando)
+            {
+                <p>Cargando productos...</p>
+            }
+            else if (!ProductosFiltrados.Any())
+            {
+                <div class="alert alert-info mb-0">
+                    No se encontraron productos.
+                </div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover align-middle">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>ID</th>
+                                <th>Imagen</th>
+                                <th>Código</th>
+                                <th>Descripción</th>
+                                <th>Marca</th>
+                                <th>Costo</th>
+                                <th>Venta</th>
+                                <th>Existencia</th>
+                                <th>Ingreso</th>
+                                <th>Estado</th>
+                                @if (PuedeAdministrar)
+                                {
+                                    <th>Acciones</th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var producto in ProductosFiltrados)
+                            {
+                                <tr>
+                                    <td>@producto.IdProducto</td>
+                                    <td>
+                                        @if (!string.IsNullOrWhiteSpace(producto.ImagenUrl))
+                                        {
+                                            <img src="@ObtenerUrlImagen(producto.ImagenUrl)"
+                                                 alt="Imagen del producto"
+                                                 style="width:55px;height:55px;object-fit:contain;"
+                                                 class="rounded border" />
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted small">Sin imagen</span>
+                                        }
+                                    </td>
+                                    <td>@producto.Codigo</td>
+                                    <td>@producto.Descripcion</td>
+                                    <td>@ObtenerNombreMarca(producto.IdMarca)</td>
+                                    <td>@($"Q{producto.PrecioCosto:N2}")</td>
+                                    <td>@($"Q{producto.PrecioVenta:N2}")</td>
+                                    <td>@producto.Existencia</td>
+                                    <td>@producto.FechaIngreso.ToString("dd/MM/yyyy")</td>
+                                    <td>
+                                        @if (producto.Estado == true)
+                                        {
+                                            <span class="badge bg-success">Activo</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-danger">Inactivo</span>
+                                        }
+                                    </td>
+                                    @if (PuedeAdministrar)
+                                    {
+                                        <td>
+                                            <div class="d-flex gap-1">
+                                                <button class="btn btn-warning btn-sm"
+                                                        @onclick="() => AbrirEditar(producto)">
+                                                    Editar
+                                                </button>
+                                                @if (producto.Estado == true)
+                                                {
+                                                    <button class="btn btn-danger btn-sm"
+                                                            @onclick="() => AbrirConfirmacion(producto)">
+                                                        Desactivar
+                                                    </button>
+                                                }
+                                                else
+                                                {
+                                                    <button class="btn btn-success btn-sm"
+                                                            @onclick="() => AbrirConfirmacion(producto)">
+                                                        Activar
+                                                    </button>
+                                                }
+                                            </div>
+                                        </td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+<!-- MODAL PARA CREAR Y EDITAR -->
+@if (mostrarModal && PuedeAdministrar)
+{
+    <div class="modal fade show d-block"
+         tabindex="-1"
+         role="dialog"
+         aria-modal="true"
+         aria-label="Formulario de producto"
+         style="@(mostrarModalMarca ? "visibility:hidden;" : "")">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title">
+                        @(editando ? "Editar Producto" : "Registrar Nuevo Producto")
+                    </h5>
+                    <button type="button"
+                            class="btn-close btn-close-white"
+                            disabled="@guardando"
+                            @onclick="CerrarModal">
+                    </button>
+                </div>
+                <EditForm Model="@formulario"
+                          OnValidSubmit="GuardarProducto"
+                          FormName="productoForm">
+                    <DataAnnotationsValidator />
+                    <div class="modal-body">
+                        @if (!string.IsNullOrWhiteSpace(errorModal))
+                        {
+                            <div class="alert alert-danger">
+                                @errorModal
+                            </div>
+                        }
+                        <ValidationSummary class="text-danger" />
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Código *</label>
+                                <InputText class="form-control"
+                                           maxlength="50"
+                                           @bind-Value="formulario.Codigo" />
+                                <ValidationMessage For="@(() => formulario.Codigo)"
+                                                   class="text-danger" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Descripción *</label>
+                                <InputText class="form-control"
+                                           maxlength="255"
+                                           @bind-Value="formulario.Descripcion" />
+                                <ValidationMessage For="@(() => formulario.Descripcion)"
+                                                   class="text-danger" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Precio costo (Q) *</label>
+                                <InputNumber class="form-control"
+                                             step="0.01"
+                                             @bind-Value="formulario.PrecioCosto" />
+                                <ValidationMessage For="@(() => formulario.PrecioCosto)"
+                                                   class="text-danger" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Precio venta (Q) *</label>
+                                <InputNumber class="form-control"
+                                             step="0.01"
+                                             @bind-Value="formulario.PrecioVenta" />
+                                <ValidationMessage For="@(() => formulario.PrecioVenta)"
+                                                   class="text-danger" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Existencia *</label>
+                                <InputNumber class="form-control"
+                                             min="0"
+                                             @bind-Value="formulario.Existencia" />
+                                <ValidationMessage For="@(() => formulario.Existencia)"
+                                                   class="text-danger" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Marca *</label>
+                                <InputSelect class="form-select"
+                                             @bind-Value="formulario.IdMarca">
+                                    <option value="0">Selecciona una marca</option>
+                                    @foreach (var marca in marcas.Where(m =>
+                                        m.Estado == true ||
+                                        (editando && m.IdMarca == formulario.IdMarca)))
+                                    {
+                                        <option value="@marca.IdMarca">
+                                            @marca.Nombre
+                                        </option>
+                                    }
+                                </InputSelect>
+                                <ValidationMessage For="@(() => formulario.IdMarca)"
+                                                   class="text-danger" />
+                                <div class="d-flex align-items-center gap-2 mt-1">
+                                    <button type="button" class="btn btn-link btn-sm p-0"
+                                            disabled="@(guardando || guardandoMarca)"
+                                            @onclick="AbrirNuevaMarcaDesdeProducto">
+                                        + Nueva marca
+                                    </button>
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(mensajeMarcaProducto))
+                                {
+                                    <div class="text-success small mt-1">@mensajeMarcaProducto</div>
+                                }
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Imagen del producto</label>
+                                <InputFile class="form-control"
+                                           OnChange="SeleccionarImagen"
+                                           accept=".jpg,.jpeg,.png,.webp" />
+                                <div class="form-text">
+                                    JPG, PNG o WebP. Máximo 2 MB.
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">
+                                    URL de imagen (opcional)
+                                </label>
+                                <InputText class="form-control"
+                                           maxlength="500"
+                                           @bind-Value="formulario.ImagenUrl" />
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(formulario.ImagenUrl))
+                            {
+                                <div class="col-12">
+                                    <label class="form-label">Imagen actual</label>
+                                    <div>
+                                        <img src="@ObtenerUrlImagen(formulario.ImagenUrl)"
+                                             alt="Imagen actual"
+                                             style="max-width:150px;max-height:150px;object-fit:contain;"
+                                             class="border rounded p-2" />
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button"
+                                class="btn btn-secondary"
+                                disabled="@guardando"
+                                @onclick="CerrarModal">
+                            Cancelar
+                        </button>
+                        <button type="submit"
+                                class="btn btn-success"
+                                disabled="@guardando">
+                            @(guardando ? "Guardando..." :
+                                editando ? "Guardar Cambios" : "Guardar Producto")
+                        </button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+<!-- MODAL NUEVA MARCA DESDE PRODUCTOS -->
+<!-- Se mantiene montado el formulario de producto para no perder sus datos ni la imagen seleccionada. -->
+@if (mostrarModalMarca && mostrarModal && PuedeAdministrar)
+{
+    <div class="modal fade show d-block"
+         tabindex="-1"
+         role="dialog"
+         aria-modal="true"
+         aria-label="Registrar nueva marca"
+         style="z-index:1070;">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title">Registrar Nueva Marca</h5>
+                    <button type="button"
+                            class="btn-close btn-close-white"
+                            disabled="@guardandoMarca"
+                            @onclick="CerrarNuevaMarcaDesdeProducto">
+                    </button>
+                </div>
+                <EditForm Model="@nuevaMarca" @key="nuevaMarca"
+                          OnValidSubmit="GuardarMarcaDesdeProducto"
+                          FormName="marcaDesdeProductoForm">
+                    <DataAnnotationsValidator />
+                    <div class="modal-body">
+                        @if (!string.IsNullOrWhiteSpace(errorMarcaProducto))
+                        {
+                            <div class="alert alert-danger">@errorMarcaProducto</div>
+                        }
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label class="form-label">Nombre de la marca *</label>
+                                <InputText class="form-control"
+                                           maxlength="100"
+                                           @bind-Value="nuevaMarca.Nombre" />
+                                <ValidationMessage For="@(() => nuevaMarca.Nombre)"
+                                                   class="text-danger" />
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Descripción</label>
+                                <InputTextArea class="form-control"
+                                               maxlength="255" rows="3"
+                                               @bind-Value="nuevaMarca.Descripcion" />
+                                <ValidationMessage For="@(() => nuevaMarca.Descripcion)"
+                                                   class="text-danger" />
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary"
+                                disabled="@guardandoMarca"
+                                @onclick="CerrarNuevaMarcaDesdeProducto">
+                            Cancelar
+                        </button>
+                        <button type="submit" class="btn btn-success"
+                                disabled="@guardandoMarca">
+                            @(guardandoMarca ? "Guardando..." : "Guardar y seleccionar")
+                        </button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show" style="z-index:1060;"></div>
+}
+<!-- MODAL DE CONFIRMACIÓN DE ESTADO -->
+@if (productoConfirmacion != null && PuedeAdministrar)
+{
+    <div class="modal fade show d-block"
+         tabindex="-1"
+         role="dialog"
+         aria-modal="true"
+         aria-label="Confirmar cambio de estado">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        Confirmar Acción
+                    </h5>
+                    <button class="btn-close"
+                            disabled="@procesandoEstado"
+                            @onclick="CerrarConfirmacion">
+                    </button>
+                </div>
+                <div class="modal-body">
+                    @if (!string.IsNullOrWhiteSpace(errorConfirmacion))
+                    {
+                        <div class="alert alert-danger">
+                            @errorConfirmacion
+                        </div>
+                    }
+                    <p>
+                        ¿Estás segura de que deseas
+                        <strong>
+                            @(productoConfirmacion.Estado == true ?
+                                "desactivar" : "activar")
+                        </strong>
+                        el producto
+                        <strong>@productoConfirmacion.Descripcion</strong>?
+                    </p>
+                    <p class="text-muted small mb-0">
+                        El producto permanecerá registrado en la base de datos.
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary"
+                            disabled="@procesandoEstado"
+                            @onclick="CerrarConfirmacion">
+                        Cancelar
+                    </button>
+                    <button class="btn @(productoConfirmacion.Estado == true ? "btn-danger" : "btn-success")"
+                            disabled="@procesandoEstado"
+                            @onclick="CambiarEstado">
+                        @(procesandoEstado ? "Procesando..." :
+                            productoConfirmacion.Estado == true ?
+                                "Desactivar" : "Activar")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+@code {
+    private const long MaxImagen = 2 * 1024 * 1024;
+    // Únicamente ADMIN puede registrar o modificar productos.
+    // La API también debe validar este permiso.
+    private bool PuedeAdministrar =>
+        Sesion.EstaAutenticado && Sesion.Rol == "ADMIN";
+    // MODELO VALIDADO DEL FORMULARIO
+    // Campos equivalentes al formulario del módulo Marcas.
+    private class FormularioMarcaDesdeProducto
+    {
+        [Required(ErrorMessage = "El nombre de la marca es obligatorio.")]
+        [StringLength(100, ErrorMessage = "Máximo 100 caracteres.")]
+        public string Nombre { get; set; } = string.Empty;
+
+        [StringLength(255, ErrorMessage = "Máximo 255 caracteres.")]
+        public string? Descripcion { get; set; }
+    }
+
+    private class FormularioProducto
+    {
+        [Required(ErrorMessage = "El código es obligatorio.")]
+        [StringLength(50, ErrorMessage = "Máximo 50 caracteres.")]
+        public string Codigo { get; set; } = string.Empty;
+        [Required(ErrorMessage = "La descripción es obligatoria.")]
+        [StringLength(255, ErrorMessage = "Máximo 255 caracteres.")]
+        public string Descripcion { get; set; } = string.Empty;
+        [Range(typeof(decimal), "0", "9999999999.99",
+            ErrorMessage = "El precio de costo no puede ser negativo.")]
+        public decimal PrecioCosto { get; set; }
+        [Range(typeof(decimal), "0.01", "9999999999.99",
+            ErrorMessage = "El precio de venta debe ser mayor que cero.")]
+        public decimal PrecioVenta { get; set; }
+        [Range(0, int.MaxValue,
+            ErrorMessage = "La existencia no puede ser negativa.")]
+        public int Existencia { get; set; }
+        [Range(1, int.MaxValue,
+            ErrorMessage = "Selecciona una marca.")]
+        public int IdMarca { get; set; }
+        [StringLength(500,
+            ErrorMessage = "La URL no debe superar 500 caracteres.")]
+        public string? ImagenUrl { get; set; }
+    }
+    private class RespuestaImagen
+    {
+        public string? ImagenUrl { get; set; }
+    }
+    // LISTADOS
+    private List<ProductoDto> productos = new();
+    private List<MarcaDto> marcas = new();
+    // FORMULARIO
+    private FormularioProducto formulario = new();
+    private IBrowserFile? imagenSeleccionada;
+    // ESTADOS
+    private bool cargando = true;
+    private bool mostrarModal;
+    private bool editando;
+    private bool guardando;
+    private bool procesandoEstado;
+    private bool mostrarModalMarca;
+    private bool guardandoMarca;
+    private FormularioMarcaDesdeProducto nuevaMarca = new();
+    private string? errorMarcaProducto;
+    private string? mensajeMarcaProducto;
+    private int idProductoEditar;
+    // CONFIRMACIÓN
+    private ProductoDto? productoConfirmacion;
+    // FILTROS
+    private string busqueda = string.Empty;
+    private string filtroEstado = "todos";
+    // MENSAJES
+    private string? mensaje;
+    private string? error;
+    private string? errorModal;
+    private string? errorConfirmacion;
+    // FILTRADO
+    private IEnumerable<ProductoDto> ProductosFiltrados =>
+        productos.Where(p =>
+            (filtroEstado == "todos" ||
+             (filtroEstado == "activos" && p.Estado == true) ||
+             (filtroEstado == "inactivos" && p.Estado != true))
+            &&
+            (
+                string.IsNullOrWhiteSpace(busqueda) ||
+                p.Codigo.Contains(busqueda.Trim(),
+                    StringComparison.OrdinalIgnoreCase) ||
+                p.Descripcion.Contains(busqueda.Trim(),
+                    StringComparison.OrdinalIgnoreCase) ||
+                ObtenerNombreMarca(p.IdMarca).Contains(
+                    busqueda.Trim(),
+                    StringComparison.OrdinalIgnoreCase)
+            )
+        );
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarMarcas();
+        await CargarProductos();
+    }
+    // CONSULTAR PRODUCTOS
+    private async Task<bool> CargarProductos()
+    {
+        cargando = true;
+        try
+        {
+            productos = await Http.GetFromJsonAsync<List<ProductoDto>>(
+                "api/Productos") ?? new();
+            error = null;
+            return true;
+        }
+        catch (Exception)
+        {
+            error = "No se pudieron consultar los productos.";
+            return false;
+        }
+        finally
+        {
+            cargando = false;
+        }
+    }
+    // CONSULTAR MARCAS
+    private async Task CargarMarcas()
+    {
+        try
+        {
+            marcas = await Http.GetFromJsonAsync<List<MarcaDto>>(
+                "api/Marcas") ?? new();
+        }
+        catch (Exception)
+        {
+            marcas = new();
+            error = "No se pudieron consultar las marcas.";
+        }
+    }
+    private string ObtenerNombreMarca(int id)
+    {
+        return marcas.FirstOrDefault(m => m.IdMarca == id)?.Nombre
+            ?? "Marca no encontrada";
+    }
+    private string? ObtenerUrlImagen(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            return null;
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return uri.Scheme == Uri.UriSchemeHttp ||
+                   uri.Scheme == Uri.UriSchemeHttps
+                ? uri.ToString()
+                : null;
+        }
+        if (url.StartsWith("/") && !url.StartsWith("//"))
+        {
+            return new Uri(
+                Http.BaseAddress!,
+                url.TrimStart('/')).ToString();
+        }
+        return null;
+    }
+    // ABRIR MODAL NUEVO
+    private async Task AbrirNuevo()
+    {
+        if (!PuedeAdministrar)
+            return;
+        await CargarMarcas();
+        formulario = new FormularioProducto();
+        imagenSeleccionada = null;
+        editando = false;
+        idProductoEditar = 0;
+        errorModal = null;
+        mostrarModalMarca = false;
+        errorMarcaProducto = null;
+        mensajeMarcaProducto = null;
+        mostrarModal = true;
+    }
+    // ABRIR MODAL EDITAR
+    private async Task AbrirEditar(ProductoDto producto)
+    {
+        if (!PuedeAdministrar)
+            return;
+        await CargarMarcas();
+        formulario = new FormularioProducto
+        {
+            Codigo = producto.Codigo,
+            Descripcion = producto.Descripcion,
+            PrecioCosto = producto.PrecioCosto,
+            PrecioVenta = producto.PrecioVenta,
+            Existencia = producto.Existencia,
+            IdMarca = producto.IdMarca,
+            ImagenUrl = producto.ImagenUrl
+        };
+        imagenSeleccionada = null;
+        editando = true;
+        idProductoEditar = producto.IdProducto;
+        errorModal = null;
+        mostrarModalMarca = false;
+        errorMarcaProducto = null;
+        mensajeMarcaProducto = null;
+        mostrarModal = true;
+    }
+    private void CerrarModal()
+    {
+        if (guardando || guardandoMarca)
+            return;
+        mostrarModal = false;
+        mostrarModalMarca = false;
+        imagenSeleccionada = null;
+        errorModal = null;
+        errorMarcaProducto = null;
+        mensajeMarcaProducto = null;
+    }
+    // REGISTRAR MARCA SIN ABANDONAR EL FORMULARIO DE PRODUCTO.
+    private void AbrirNuevaMarcaDesdeProducto()
+    {
+        if (!PuedeAdministrar || !mostrarModal || guardando || guardandoMarca)
+            return;
+
+        nuevaMarca = new FormularioMarcaDesdeProducto();
+        errorMarcaProducto = null;
+        mensajeMarcaProducto = null;
+        mostrarModalMarca = true;
+    }
+
+    private void CerrarNuevaMarcaDesdeProducto()
+    {
+        if (guardandoMarca)
+            return;
+
+        mostrarModalMarca = false;
+        errorMarcaProducto = null;
+    }
+
+    private async Task GuardarMarcaDesdeProducto()
+    {
+        if (!PuedeAdministrar || !mostrarModal || !mostrarModalMarca ||
+            guardandoMarca || guardando)
+            return;
+
+        guardandoMarca = true;
+        errorMarcaProducto = null;
+        try
+        {
+            string nombre = nuevaMarca.Nombre?.Trim() ?? string.Empty;
+            string? descripcion = string.IsNullOrWhiteSpace(nuevaMarca.Descripcion)
+                ? null
+                : nuevaMarca.Descripcion.Trim();
+
+            if (string.IsNullOrWhiteSpace(nombre))
+            {
+                errorMarcaProducto = "Ingresá el nombre de la marca.";
+                return;
+            }
+
+            if (nombre.Length > 100 || (descripcion?.Length ?? 0) > 255)
+            {
+                errorMarcaProducto = "Verificá la longitud del nombre o descripción.";
+                return;
+            }
+
+            // Guardar por la API existente; conserva la validación de duplicados y los permisos.
+            var idsPrevios = marcas.Select(m => m.IdMarca).ToHashSet();
+            using var respuesta = await Http.PostAsJsonAsync("api/Marcas", new
+            {
+                Nombre = nombre,
+                Descripcion = descripcion
+            });
+
+            if (!respuesta.IsSuccessStatusCode)
+            {
+                string contenido = await respuesta.Content.ReadAsStringAsync();
+                try
+                {
+                    using var json = System.Text.Json.JsonDocument.Parse(contenido);
+                    if (json.RootElement.TryGetProperty("mensaje", out var mensajeApi) &&
+                        mensajeApi.ValueKind == System.Text.Json.JsonValueKind.String)
+                    {
+                        errorMarcaProducto = mensajeApi.GetString();
+                    }
+                }
+                catch (System.Text.Json.JsonException)
+                {
+                    // La respuesta de la API puede no ser JSON.
+                }
+
+                errorMarcaProducto ??=
+                    $"No se pudo registrar la marca. HTTP {(int)respuesta.StatusCode}.";
+                return;
+            }
+
+            // Traer el catálogo actualizado y detectar la nueva marca por nombre e ID.
+            var actualizadas = await Http.GetFromJsonAsync<List<MarcaDto>>("api/Marcas");
+            if (actualizadas == null)
+            {
+                errorMarcaProducto = "La marca fue registrada, pero no se pudo actualizar la lista.";
+                return;
+            }
+
+            marcas = actualizadas;
+            var creada = marcas
+                .Where(m => m.Estado == true &&
+                            string.Equals(m.Nombre.Trim(), nombre,
+                                StringComparison.OrdinalIgnoreCase))
+                .OrderBy(m => idsPrevios.Contains(m.IdMarca))
+                .ThenByDescending(m => m.IdMarca)
+                .FirstOrDefault();
+
+            if (creada == null)
+            {
+                errorMarcaProducto = "Se registró la marca, pero no se encontró en las marcas activas.";
+                return;
+            }
+
+            formulario.IdMarca = creada.IdMarca;
+            mostrarModalMarca = false;
+            nuevaMarca = new FormularioMarcaDesdeProducto();
+            mensajeMarcaProducto = $"Marca '{creada.Nombre}' registrada y seleccionada.";
+        }
+        catch (Exception)
+        {
+            errorMarcaProducto = "No se pudo conectar con la API de Marcas. Intentá nuevamente.";
+        }
+        finally
+        {
+            guardandoMarca = false;
+        }
+    }
+
+    // VALIDAR IMAGEN SELECCIONADA
+    private Task SeleccionarImagen(InputFileChangeEventArgs e)
+    {
+        if (!PuedeAdministrar)
+        {
+            errorModal = "No tienes permisos para subir imágenes.";
+            return Task.CompletedTask;
+        }
+        errorModal = null;
+        imagenSeleccionada = null;
+        var archivo = e.File;
+        if (archivo.Size == 0 || archivo.Size > MaxImagen)
+        {
+            errorModal = "La imagen debe tener un tamaño máximo de 2 MB.";
+            return Task.CompletedTask;
+        }
+        string extension = Path.GetExtension(archivo.Name).ToLowerInvariant();
+        if (extension != ".jpg" &&
+            extension != ".jpeg" &&
+            extension != ".png" &&
+            extension != ".webp")
+        {
+            errorModal = "Solo se permiten imágenes JPG, PNG o WebP.";
+            return Task.CompletedTask;
+        }
+        imagenSeleccionada = archivo;
+        return Task.CompletedTask;
+    }
+    // VALIDACIONES ADICIONALES
+    private string? ValidarFormulario()
+    {
+        if (string.IsNullOrWhiteSpace(formulario.Codigo))
+            return "El código es obligatorio.";
+        if (string.IsNullOrWhiteSpace(formulario.Descripcion))
+            return "La descripción es obligatoria.";
+        if (!marcas.Any(m =>
+            m.IdMarca == formulario.IdMarca &&
+            (m.Estado == true ||
+             (editando && m.IdMarca == formulario.IdMarca))))
+        {
+            return "Selecciona una marca válida.";
+        }
+        if (decimal.Round(formulario.PrecioCosto, 2) != formulario.PrecioCosto ||
+            decimal.Round(formulario.PrecioVenta, 2) != formulario.PrecioVenta)
+        {
+            return "Los precios solo permiten dos decimales.";
+        }
+        if (!string.IsNullOrWhiteSpace(formulario.ImagenUrl))
+        {
+            var url = ObtenerUrlImagen(formulario.ImagenUrl);
+            if (url == null)
+                return "Ingresa una URL de imagen HTTP, HTTPS o ruta local.";
+        }
+        return null;
+    }
+    // GUARDAR NUEVO O EDITAR
+    private async Task GuardarProducto()
+    {
+        if (!PuedeAdministrar)
+        {
+            errorModal = "Tu rol no puede registrar ni modificar productos.";
+            return;
+        }
+        if (guardando)
+            return;
+        guardando = true;
+        errorModal = null;
+        try
+        {
+            formulario.Codigo = formulario.Codigo.Trim();
+            formulario.Descripcion = formulario.Descripcion.Trim();
+            var validacion = ValidarFormulario();
+            if (validacion != null)
+            {
+                errorModal = validacion;
+                return;
+            }
+            // SUBIR IMAGEN AL SERVIDOR SI SE SELECCIONÓ UNA
+            if (imagenSeleccionada != null)
+            {
+                using var contenido = new MultipartFormDataContent();
+                using var stream = imagenSeleccionada.OpenReadStream(MaxImagen);
+                using var archivo = new StreamContent(stream);
+                archivo.Headers.ContentType =
+                    new MediaTypeHeaderValue(imagenSeleccionada.ContentType);
+                contenido.Add(archivo, "archivo", imagenSeleccionada.Name);
+                var respuestaSubida = await Http.PostAsync(
+                    "api/Productos/imagen", contenido);
+                if (!respuestaSubida.IsSuccessStatusCode)
+                {
+                    errorModal = "No se pudo subir la imagen. " +
+                        await respuestaSubida.Content.ReadAsStringAsync();
+                    return;
+                }
+                var resultadoImagen = await respuestaSubida.Content
+                    .ReadFromJsonAsync<RespuestaImagen>();
+                if (string.IsNullOrWhiteSpace(resultadoImagen?.ImagenUrl))
+                {
+                    errorModal = "La API no devolvió la ruta de la imagen.";
+                    return;
+                }
+                formulario.ImagenUrl = resultadoImagen.ImagenUrl;
+            }
+            HttpResponseMessage respuesta;
+            if (editando)
+            {
+                respuesta = await Http.PutAsJsonAsync(
+                    $"api/Productos/{idProductoEditar}", formulario);
+            }
+            else
+            {
+                respuesta = await Http.PostAsJsonAsync(
+                    "api/Productos", formulario);
+            }
+            if (!respuesta.IsSuccessStatusCode)
+            {
+                errorModal = "No se pudo guardar el producto. " +
+                    await respuesta.Content.ReadAsStringAsync();
+                return;
+            }
+            mostrarModal = false;
+            imagenSeleccionada = null;
+            bool actualizado = await CargarProductos();
+            if (actualizado)
+            {
+                mensaje = editando
+                    ? "Producto actualizado correctamente."
+                    : "Producto registrado correctamente.";
+            }
+        }
+        catch (Exception)
+        {
+            errorModal = "Error de comunicación con la API. Revisa la terminal.";
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+    // ABRIR MODAL CONFIRMACIÓN
+    private void AbrirConfirmacion(ProductoDto producto)
+    {
+        if (!PuedeAdministrar)
+            return;
+        productoConfirmacion = producto;
+        errorConfirmacion = null;
+    }
+    private void CerrarConfirmacion()
+    {
+        if (procesandoEstado)
+            return;
+        productoConfirmacion = null;
+        errorConfirmacion = null;
+    }
+    // ACTIVAR O DESACTIVAR
+    private async Task CambiarEstado()
+    {
+        if (!PuedeAdministrar)
+        {
+            errorConfirmacion = "Tu rol no puede activar ni desactivar productos.";
+            return;
+        }
+        if (productoConfirmacion == null || procesandoEstado)
+            return;
+        procesandoEstado = true;
+        errorConfirmacion = null;
+        try
+        {
+            int id = productoConfirmacion.IdProducto;
+            bool activar = productoConfirmacion.Estado != true;
+            HttpResponseMessage respuesta;
+            if (activar)
+            {
+                respuesta = await Http.PutAsync(
+                    $"api/Productos/{id}/activar",
+                    null);
+            }
+            else
+            {
+                respuesta = await Http.DeleteAsync(
+                    $"api/Productos/{id}");
+            }
+            if (!respuesta.IsSuccessStatusCode)
+            {
+                errorConfirmacion = "No se pudo cambiar el estado. " +
+                    await respuesta.Content.ReadAsStringAsync();
+                return;
+            }
+            productoConfirmacion = null;
+            bool actualizado = await CargarProductos();
+            if (actualizado)
+            {
+                mensaje = activar
+                    ? "Producto activado correctamente."
+                    : "Producto desactivado correctamente.";
+            }
+        }
+        catch (Exception)
+        {
+            errorConfirmacion = "No se pudo conectar con la API.";
+        }
+        finally
+        {
+            procesandoEstado = false;
+        }
+    }
+}

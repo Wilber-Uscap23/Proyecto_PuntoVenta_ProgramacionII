@@ -1,0 +1,537 @@
+﻿@page "/"
+@rendermode InteractiveServer
+
+@using System.Net.Http.Json
+@using System.Globalization
+@using PuntoVentaWeb.Servicios
+
+@inject HttpClient Http
+@inject SesionUsuario Sesion
+
+<PageTitle>Inicio - Sistema Punto de Venta</PageTitle>
+
+<style>
+    .pv-home { color: #25324a; }
+    .pv-hero {
+        background: linear-gradient(115deg, #132e59 0%, #18539a 67%, #207dc4 100%);
+        border-radius: 18px;
+        color: white;
+        padding: 30px 34px;
+        box-shadow: 0 10px 25px rgba(16, 54, 107, .15);
+    }
+    .pv-hero-eyebrow { color: #c9e5ff; letter-spacing: .09em; font-size: .75rem; font-weight: 700; }
+    .pv-hero-title { font-size: clamp(1.55rem, 3vw, 2.25rem); font-weight: 750; line-height: 1.2; }
+    .pv-hero-subtitle { color: #e1edff; }
+    .pv-hero-badge { display: inline-block; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.23); border-radius: 50px; padding: 7px 14px; font-size: .83rem; font-weight: 700; }
+    .pv-stat { border: 1px solid #e7edf5; border-radius: 16px; background: #fff; height: 100%; box-shadow: 0 4px 16px rgba(30, 51, 83, .045); }
+    .pv-stat .card-body { padding: 22px; }
+    .pv-stat-label { color: #65758e; font-size: .87rem; font-weight: 600; }
+    .pv-stat-number { color: #172e50; font-size: 1.85rem; font-weight: 750; line-height: 1.25; overflow-wrap: anywhere; }
+    .pv-stat-detail { color: #75859a; font-size: .8rem; }
+    .pv-stat-symbol { height: 42px; width: 42px; flex: none; display: inline-flex; align-items: center; justify-content: center; border-radius: 12px; font-size: 1.15rem; }
+    .pv-symbol-blue { background: #eaf3ff; color: #1f65b3; }
+    .pv-symbol-green { background: #e4f8ed; color: #13844b; }
+    .pv-symbol-purple { background: #f0ebff; color: #6947a8; }
+    .pv-symbol-orange { background: #fff2e3; color: #be7414; }
+    .pv-panel { background: white; border: 1px solid #e7edf5; border-radius: 16px; box-shadow: 0 4px 16px rgba(30, 51, 83, .045); height: 100%; }
+    .pv-panel-head { padding: 21px 23px 12px; }
+    .pv-panel-title { color: #203858; font-size: 1.05rem; font-weight: 750; margin: 0; }
+    .pv-panel-subtitle { color: #8090a4; font-size: .82rem; margin: 5px 0 0; }
+    .pv-bar-track { height: 140px; display: flex; align-items: flex-end; justify-content: center; background: #f1f5fb; border-radius: 8px 8px 3px 3px; overflow: hidden; }
+    .pv-bar { width: 100%; border-radius: 7px 7px 2px 2px; background: linear-gradient(180deg, #5ba8f4, #2168c1); min-height: 3px; }
+    .pv-chart-day { color: #65758e; font-size: .76rem; font-weight: 650; text-transform: capitalize; }
+    .pv-chart-total { color: #304f78; font-size: .71rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pv-shortcut { color: #26496e; border: 1px solid #e7edf5; border-radius: 12px; background: #fbfdff; text-decoration: none; display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 14px 16px; transition: background .15s, border-color .15s; }
+    .pv-shortcut:hover { color: #1558a4; background: #eff6ff; border-color: #cbdff7; }
+    .pv-shortcut span:first-child { font-weight: 650; }
+    .pv-table th { color: #728198; font-size: .79rem; font-weight: 650; border-bottom-color: #e7edf5; white-space: nowrap; }
+    .pv-table td { color: #3b4c62; font-size: .88rem; vertical-align: middle; border-bottom-color: #f0f3f8; }
+    .pv-muted { color: #7c8ba0; }
+    .pv-portal-card {
+        display: flex; flex-direction: column; gap: 12px; height: 100%;
+        border: 1px solid #e4ebf5; border-radius: 14px;
+        background: #fbfdff; padding: 22px;
+        text-decoration: none; color: #263e5c;
+        transition: background .15s ease, border-color .15s ease, transform .15s ease;
+    }
+    .pv-portal-card:hover, .pv-portal-card:focus-visible {
+        background: #eef6ff; border-color: #a9cbed; color: #1558a4;
+        transform: translateY(-2px);
+    }
+    .pv-portal-icon {
+        display: inline-flex; width: 48px; height: 48px;
+        align-items: center; justify-content: center; font-size: 1.5rem;
+        border-radius: 12px; background: #eaf3ff;
+    }
+    .pv-portal-card-title { font-weight: 750; font-size: 1.05rem; }
+    .pv-portal-card-desc { color: #687a93; font-size: .9rem; line-height: 1.5; }
+</style>
+
+<div class="container-fluid mt-4 mb-5 pv-home">
+    @if (!Sesion.EstaAutenticado)
+    {
+        <div class="pv-hero mb-4">
+            <div class="pv-hero-eyebrow mb-2">SISTEMA PUNTO DE VENTA</div>
+            <h1 class="pv-hero-title mb-2">Bienvenido al sistema</h1>
+            <p class="pv-hero-subtitle mb-0">Iniciá sesión para consultar los indicadores y acceder a las opciones de tu rol.</p>
+        </div>
+        <div class="alert alert-info">Para proteger la información del negocio, el panel no muestra estadísticas sin una sesión iniciada.</div>
+    }
+    else if (EsVendedor)
+    {
+        <div class="pv-hero mb-4">
+            <div class="pv-hero-eyebrow mb-2">SISTEMA PUNTO DE VENTA · VENDEDOR</div>
+            <h1 class="pv-hero-title mb-2">¡Bienvenido, @NombreUsuario!</h1>
+            <p class="pv-hero-subtitle mb-0">Seleccioná una opción para comenzar tu jornada de trabajo.</p>
+        </div>
+
+        <div class="pv-panel p-4">
+            <h2 class="h5 fw-bold mb-1" style="color:#203858">Tus accesos de trabajo</h2>
+            <p class="small pv-muted mb-4">Elegí el módulo que necesitás. Los permisos de cada operación se mantienen según tu rol.</p>
+            <div class="row g-3">
+                <div class="col-12 col-md-6">
+                    <a class="pv-portal-card" href="/ventas">
+                        <span class="pv-portal-icon" aria-hidden="true">🛒</span>
+                        <span class="pv-portal-card-title">Ventas →</span>
+                        <span class="pv-portal-card-desc">Registrá ventas, consultá el historial y generá comprobantes PDF.</span>
+                    </a>
+                </div>
+                <div class="col-12 col-md-6">
+                    <a class="pv-portal-card" href="/clientes">
+                        <span class="pv-portal-icon" aria-hidden="true">👥</span>
+                        <span class="pv-portal-card-title">Clientes →</span>
+                        <span class="pv-portal-card-desc">Consultá clientes y registrá nuevos compradores.</span>
+                    </a>
+                </div>
+                <div class="col-12 col-md-6">
+                    <a class="pv-portal-card" href="/productos">
+                        <span class="pv-portal-icon" aria-hidden="true">📦</span>
+                        <span class="pv-portal-card-title">Productos →</span>
+                        <span class="pv-portal-card-desc">Consultá los productos, sus precios y disponibilidad.</span>
+                    </a>
+                </div>
+                <div class="col-12 col-md-6">
+                    <a class="pv-portal-card" href="/inventario">
+                        <span class="pv-portal-icon" aria-hidden="true">📋</span>
+                        <span class="pv-portal-card-title">Inventario →</span>
+                        <span class="pv-portal-card-desc">Revisá existencias sin modificar registros de inventario.</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    }
+    else if (EsConsulta)
+    {
+        <div class="pv-hero mb-4">
+            <div class="pv-hero-eyebrow mb-2">SISTEMA PUNTO DE VENTA · CONSULTAS</div>
+            <h1 class="pv-hero-title mb-2">¡Bienvenido, @NombreUsuario!</h1>
+            <p class="pv-hero-subtitle mb-0">Tu usuario tiene acceso de solo lectura. Elegí el módulo que necesitás consultar.</p>
+        </div>
+        <div class="pv-panel p-4">
+            <h2 class="h5 fw-bold mb-1" style="color:#203858">Accesos de consulta</h2>
+            <p class="small pv-muted mb-4">No se muestran estadísticas administrativas ni opciones para modificar registros.</p>
+            <div class="row g-3">
+                <div class="col-12 col-md-6"><a class="pv-shortcut" href="/ventas"><span>🛒 Consultar ventas</span><span>→</span></a></div>
+                <div class="col-12 col-md-6"><a class="pv-shortcut" href="/productos"><span>📦 Consultar productos</span><span>→</span></a></div>
+                <div class="col-12 col-md-6"><a class="pv-shortcut" href="/compras"><span>📥 Consultar compras</span><span>→</span></a></div>
+                <div class="col-12 col-md-6"><a class="pv-shortcut" href="/proveedores"><span>🏢 Consultar proveedores</span><span>→</span></a></div>
+                <div class="col-12 col-md-6"><a class="pv-shortcut" href="/clientes"><span>👥 Consultar clientes</span><span>→</span></a></div>
+                <div class="col-12 col-md-6"><a class="pv-shortcut" href="/marcas"><span>🏷️ Consultar marcas</span><span>→</span></a></div>
+                <div class="col-12 col-md-6"><a class="pv-shortcut" href="/reportes"><span>📊 Consultar reportes</span><span>→</span></a></div>
+            </div>
+        </div>
+    }
+    else if (EsAdmin)
+    {
+        <div class="pv-hero mb-4">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                <div>
+                    <div class="pv-hero-eyebrow mb-2">SISTEMA PUNTO DE VENTA · PANEL ADMINISTRATIVO</div>
+                    <h1 class="pv-hero-title mb-2">¡Hola, @NombreUsuario! 👋</h1>
+                    <p class="pv-hero-subtitle mb-0">@DescripcionPanel</p>
+                </div>
+                <div class="text-md-end">
+                    <div class="pv-hero-badge mb-2">@NombreRol</div>
+                    <div class="small" style="color:#d9eaff">@DateTime.Now.ToString("dddd, dd 'de' MMMM 'de' yyyy", Cultura)</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+            <div>
+                <h2 class="h5 fw-bold mb-1" style="color:#203858">Resumen del negocio</h2>
+            </div>
+            <button type="button" class="btn btn-outline-primary btn-sm" disabled="@cargando" @onclick="CargarDashboard">
+                @(cargando ? "Actualizando..." : "↻ Actualizar datos")
+            </button>
+        </div>
+
+        @if (cargando)
+        {
+            <div class="alert alert-light border mb-4">
+                <span class="spinner-border spinner-border-sm text-primary me-2" role="status"></span>
+                Consultando información de la API...
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(advertencia))
+        {
+            <div class="alert alert-warning mb-4">@advertencia</div>
+        }
+
+        <div class="row g-3 mb-4">
+            <div class="col-12 col-sm-6 col-xl-3">
+                <div class="pv-stat card">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+                            <span class="pv-stat-label">Ventas de hoy</span>
+                            <span class="pv-stat-symbol pv-symbol-blue">Q</span>
+                        </div>
+                        <div class="pv-stat-number mb-1">@(ventasCargadas ? Moneda(VentasHoy) : "—")</div>
+                        <div class="pv-stat-detail">@(ventasCargadas ? $"{CantidadVentasHoy} ventas registradas hoy" : "Sin datos de ventas")</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-xl-3">
+                <div class="pv-stat card">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+                            <span class="pv-stat-label">Ventas del mes</span>
+                            <span class="pv-stat-symbol pv-symbol-green">↗</span>
+                        </div>
+                        <div class="pv-stat-number mb-1">@(ventasCargadas ? Moneda(VentasMes) : "—")</div>
+                        <div class="pv-stat-detail">@(ventasCargadas ? $"{CantidadVentasMes} ventas registradas este mes" : "Sin datos de ventas")</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-xl-3">
+                <div class="pv-stat card">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+                            <span class="pv-stat-label">Productos activos</span>
+                            <span class="pv-stat-symbol pv-symbol-purple">▣</span>
+                        </div>
+                        <div class="pv-stat-number mb-1">@(productosCargados ? ProductosActivos.ToString("N0", Cultura) : "—")</div>
+                        <div class="pv-stat-detail">Productos disponibles en el catálogo</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-xl-3">
+                <div class="pv-stat card">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+                            <span class="pv-stat-label">Existencias bajas</span>
+                            <span class="pv-stat-symbol pv-symbol-orange">!</span>
+                        </div>
+                        <div class="pv-stat-number mb-1">@(productosCargados ? ProductosConStockBajo.ToString("N0", Cultura) : "—")</div>
+                        <div class="pv-stat-detail">Productos activos con 5 unidades o menos</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @if (PuedeConsultarCompras)
+        {
+            <div class="row g-3 mb-4">
+                <div class="col-12 col-lg-6">
+                    <div class="pv-stat card">
+                        <div class="card-body d-flex align-items-center justify-content-between gap-3 flex-wrap">
+                            <div>
+                                <div class="pv-stat-label mb-2">Compras del mes</div>
+                                <div class="pv-stat-number">@(comprasCargadas ? Moneda(ComprasMes) : "—")</div>
+                                <div class="pv-stat-detail">@(comprasCargadas ? $"{CantidadComprasMes} compras registradas este mes" : "Sin datos de compras")</div>
+                            </div>
+                            <a class="btn btn-outline-primary btn-sm" href="/compras">Ver compras →</a>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-12 col-lg-6">
+                    <div class="pv-stat card">
+                        <div class="card-body d-flex align-items-center justify-content-between gap-3 flex-wrap">
+                            <div>
+                                <div class="pv-stat-label mb-2">Compras registradas</div>
+                                <div class="pv-stat-number">@(comprasCargadas ? ComprasRegistradas.ToString("N0", Cultura) : "—")</div>
+                                <div class="pv-stat-detail">Total de compras vigentes en el historial</div>
+                            </div>
+                            <a class="btn btn-outline-primary btn-sm" href="/proveedores">Ver proveedores →</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <div class="row g-3 mb-4">
+            <div class="col-12 col-xl-8">
+                <div class="pv-panel">
+                    <div class="pv-panel-head d-flex justify-content-between align-items-start flex-wrap gap-2">
+                        <div>
+                            <h3 class="pv-panel-title">Ventas de los últimos 7 días</h3>
+                            <p class="pv-panel-subtitle">Montos de ventas registradas, sin incluir anuladas</p>
+                        </div>
+                        <span class="badge text-bg-light border">Quetzales (Q)</span>
+                    </div>
+                    <div class="px-3 px-sm-4 pt-3 pb-4">
+                        @if (!ventasCargadas)
+                        {
+                            <div class="text-center pv-muted py-5">No fue posible cargar la gráfica de ventas.</div>
+                        }
+                        else
+                        {
+                            <div class="row g-2 align-items-end">
+                                @foreach (var dia in UltimosSieteDias)
+                                {
+                                    <div class="col text-center" style="min-width:0">
+                                        <div class="pv-chart-total mb-2" title="@Moneda(dia.Total)">@MonedaCorta(dia.Total)</div>
+                                        <div class="pv-bar-track" title="@Moneda(dia.Total)">
+                                            <div class="pv-bar" style="@EstiloBarra(dia.Total)"></div>
+                                        </div>
+                                        <div class="pv-chart-day mt-2">@dia.Fecha.ToString("ddd", Cultura)</div>
+                                    </div>
+                                }
+                            </div>
+                            <div class="small text-muted mt-3">Total del período: <strong>@Moneda(UltimosSieteDias.Sum(d => d.Total))</strong></div>
+                        }
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-xl-4">
+                <div class="pv-panel">
+                    <div class="pv-panel-head">
+                        <h3 class="pv-panel-title">Accesos rápidos</h3>
+                    </div>
+                    <div class="px-3 px-sm-4 pb-4 pt-2 d-grid gap-2">
+                        <a class="pv-shortcut" href="/ventas"><span>🛒 @((EsAdmin || EsVendedor) ? "Ir a Ventas" : "Consultar Ventas")</span><span>→</span></a>
+                        <a class="pv-shortcut" href="/productos"><span>📦 @((EsAdmin) ? "Administrar Productos" : "Consultar Productos")</span><span>→</span></a>
+                        @if (EsAdmin || EsVendedor)
+                        {
+                            <a class="pv-shortcut" href="/clientes"><span>👥 Clientes</span><span>→</span></a>
+                        }
+                        @if (PuedeConsultarCompras)
+                        {
+                            <a class="pv-shortcut" href="/compras"><span>📥 Compras</span><span>→</span></a>
+                            <a class="pv-shortcut" href="/proveedores"><span>🏢 Proveedores</span><span>→</span></a>
+                        }
+                        @if (EsAdmin || EsConsulta)
+                        {
+                            <a class="pv-shortcut" href="/reportes"><span>📊 Reportes</span><span>→</span></a>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="pv-panel">
+            <div class="pv-panel-head d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <h3 class="pv-panel-title">Últimas ventas</h3>
+                </div>
+                <a class="btn btn-outline-primary btn-sm" href="/ventas">Ver todas →</a>
+            </div>
+            <div class="table-responsive px-3 px-sm-4 pb-3">
+                <table class="table pv-table mb-0">
+                    <thead>
+                        <tr>
+                            <th>No.</th>
+                            <th>Fecha</th>
+                            <th>Cliente</th>
+                            <th>Total</th>
+                            <th>Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (!ventasCargadas)
+                        {
+                            <tr><td colspan="5" class="text-center pv-muted py-4">Información de ventas no disponible.</td></tr>
+                        }
+                        else if (!UltimasVentas.Any())
+                        {
+                            <tr><td colspan="5" class="text-center pv-muted py-4">Todavía no hay ventas registradas.</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var venta in UltimasVentas)
+                            {
+                                <tr>
+                                    <td class="fw-semibold">#@venta.IdVenta</td>
+                                    <td>@venta.FechaVenta.ToString("dd/MM/yyyy HH:mm")</td>
+                                    <td>@venta.NombreCliente</td>
+                                    <td class="fw-semibold">@Moneda(venta.Total)</td>
+                                    <td>
+                                        @if (EsRegistrada(venta.Estado))
+                                        {
+                                            <span class="badge bg-success">Registrada</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-secondary">@venta.Estado</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        @if (ultimaActualizacion.HasValue)
+        {
+            <div class="text-end small pv-muted mt-3">Última actualización: @ultimaActualizacion.Value.ToString("dd/MM/yyyy HH:mm:ss")</div>
+        }
+    }
+    else
+    {
+        <div class="alert alert-danger">El rol de tu sesión no tiene una pantalla de inicio asignada. Comunicate con el administrador.</div>
+    }
+</div>
+
+@code {
+    private static readonly CultureInfo Cultura = CultureInfo.GetCultureInfo("es-GT");
+    private readonly List<VentaResumen> ventas = new();
+    private readonly List<CompraResumen> compras = new();
+    private readonly List<ProductoResumen> productos = new();
+
+    private bool cargando;
+    private bool ventasCargadas;
+    private bool comprasCargadas;
+    private bool productosCargados;
+    private string? advertencia;
+    private DateTime? ultimaActualizacion;
+
+    private bool EsAdmin => Sesion.EstaAutenticado &&
+        string.Equals(Sesion.Rol, "ADMIN", StringComparison.OrdinalIgnoreCase);
+    private bool EsVendedor => Sesion.EstaAutenticado &&
+        string.Equals(Sesion.Rol, "VENDEDOR", StringComparison.OrdinalIgnoreCase);
+    private bool EsConsulta => Sesion.EstaAutenticado &&
+        string.Equals(Sesion.Rol, "CONSULTA", StringComparison.OrdinalIgnoreCase);
+    // El panel administrativo únicamente se carga para ADMIN.
+    private bool PuedeConsultarCompras => EsAdmin;
+    private string NombreRol => Sesion.Rol ?? "USUARIO";
+    private string NombreUsuario => string.IsNullOrWhiteSpace(Sesion.NombreCompleto)
+        ? "bienvenido" : Sesion.NombreCompleto.Trim();
+    private string DescripcionPanel => "Administrá tu negocio y revisá sus indicadores en un solo lugar.";
+
+    private static bool EsRegistrada(string? estado) =>
+        string.Equals(estado, "REGISTRADA", StringComparison.OrdinalIgnoreCase);
+
+    private DateTime Hoy => DateTime.Today;
+    private bool EsMesActual(DateTime fecha) => fecha.Year == Hoy.Year && fecha.Month == Hoy.Month;
+
+    private int CantidadVentasHoy => ventas.Count(v => EsRegistrada(v.Estado) && v.FechaVenta.Date == Hoy);
+    private decimal VentasHoy => ventas.Where(v => EsRegistrada(v.Estado) && v.FechaVenta.Date == Hoy).Sum(v => v.Total);
+    private int CantidadVentasMes => ventas.Count(v => EsRegistrada(v.Estado) && EsMesActual(v.FechaVenta));
+    private decimal VentasMes => ventas.Where(v => EsRegistrada(v.Estado) && EsMesActual(v.FechaVenta)).Sum(v => v.Total);
+    private int ProductosActivos => productos.Count(p => p.Estado == true);
+    private int ProductosConStockBajo => productos.Count(p => p.Estado == true && p.Existencia <= 5);
+    private int CantidadComprasMes => compras.Count(c => EsRegistrada(c.Estado) && EsMesActual(c.FechaCompra));
+    private decimal ComprasMes => compras.Where(c => EsRegistrada(c.Estado) && EsMesActual(c.FechaCompra)).Sum(c => c.Total);
+    private int ComprasRegistradas => compras.Count(c => EsRegistrada(c.Estado));
+    private IEnumerable<VentaResumen> UltimasVentas => ventas.OrderByDescending(v => v.FechaVenta)
+        .ThenByDescending(v => v.IdVenta).Take(5);
+
+    private List<VentaDia> UltimosSieteDias => Enumerable.Range(0, 7)
+        .Select(i => Hoy.AddDays(i - 6))
+        .Select(fecha => new VentaDia
+        {
+            Fecha = fecha,
+            Total = ventas.Where(v => EsRegistrada(v.Estado) && v.FechaVenta.Date == fecha).Sum(v => v.Total)
+        }).ToList();
+
+    private string EstiloBarra(decimal total)
+    {
+        decimal maximo = UltimosSieteDias.Max(d => d.Total);
+        decimal alto = maximo <= 0 || total <= 0 ? 0 : Math.Max(2m, total / maximo * 100m);
+        return $"height:{alto.ToString("0.##", CultureInfo.InvariantCulture)}%;";
+    }
+
+    private static string Moneda(decimal monto) => "Q " + monto.ToString("N2", Cultura);
+    private static string MonedaCorta(decimal monto) => monto >= 1000000m
+        ? "Q" + (monto / 1000000m).ToString("0.#", Cultura) + "M"
+        : monto >= 1000m
+            ? "Q" + (monto / 1000m).ToString("0.#", Cultura) + "k"
+            : "Q" + monto.ToString("0", Cultura);
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Los indicadores nunca se solicitan si el usuario no es ADMIN.
+        if (EsAdmin)
+            await CargarDashboard();
+    }
+
+    private async Task CargarDashboard()
+    {
+        if (!EsAdmin || cargando) return;
+
+        cargando = true;
+        advertencia = null;
+        ventasCargadas = false;
+        productosCargados = false;
+        comprasCargadas = false;
+        ventas.Clear();
+        compras.Clear();
+        productos.Clear();
+
+        try
+        {
+            // API exclusiva de ADMIN: no solicitamos estadísticas desde
+            // las rutas generales de los módulos.
+            var respuesta = await Http.GetFromJsonAsync<DatosDashboard>("api/Dashboard");
+            if (respuesta == null)
+                throw new InvalidOperationException("La API no devolvió los indicadores.");
+
+            ventas.AddRange(respuesta.Ventas ?? new());
+            compras.AddRange(respuesta.Compras ?? new());
+            productos.AddRange(respuesta.Productos ?? new());
+            ventasCargadas = true;
+            comprasCargadas = true;
+            productosCargados = true;
+            ultimaActualizacion = DateTime.Now;
+        }
+        catch (Exception)
+        {
+            advertencia = "No se pudo cargar el panel administrativo. Verificá que la API esté ejecutándose, " +
+                "que hayas agregado DashboardController.cs y que tu sesión ADMIN esté activa.";
+        }
+        finally
+        {
+            cargando = false;
+        }
+    }
+
+    public class DatosDashboard
+    {
+        public List<VentaResumen>? Ventas { get; set; }
+        public List<CompraResumen>? Compras { get; set; }
+        public List<ProductoResumen>? Productos { get; set; }
+    }
+
+    public class VentaResumen
+    {
+        public int IdVenta { get; set; }
+        public string NombreCliente { get; set; } = "";
+        public DateTime FechaVenta { get; set; }
+        public decimal Total { get; set; }
+        public string Estado { get; set; } = "";
+    }
+
+    public class CompraResumen
+    {
+        public int IdCompra { get; set; }
+        public DateTime FechaCompra { get; set; }
+        public decimal Total { get; set; }
+        public string Estado { get; set; } = "";
+    }
+
+    public class ProductoResumen
+    {
+        public int IdProducto { get; set; }
+        public int Existencia { get; set; }
+        public bool? Estado { get; set; }
+    }
+
+    public class VentaDia
+    {
+        public DateTime Fecha { get; set; }
+        public decimal Total { get; set; }
+    }
+}

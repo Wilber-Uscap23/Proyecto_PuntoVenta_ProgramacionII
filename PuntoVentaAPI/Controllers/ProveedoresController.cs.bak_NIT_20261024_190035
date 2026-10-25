@@ -1,0 +1,813 @@
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+
+using Microsoft.EntityFrameworkCore;
+
+using MySqlConnector;
+
+using PuntoVentaAPI.Data;
+
+using PuntoVentaAPI.Models;
+
+using System.ComponentModel.DataAnnotations;
+
+using System.Text.RegularExpressions;
+
+namespace PuntoVentaAPI.Controllers;
+
+// ============================================
+
+// DTO PARA REGISTRAR Y EDITAR PROVEEDORES
+
+// ============================================
+
+public class GuardarProveedorDto : IValidatableObject
+
+{
+
+    [Required(ErrorMessage = "El nombre del proveedor es obligatorio.")]
+
+    [StringLength(150, MinimumLength = 3,
+
+        ErrorMessage = "El nombre debe tener entre 3 y 150 caracteres.")]
+
+    [RegularExpression(@"^[\p{L}\p{N}\s.,&()/#'+-]+$",
+
+        ErrorMessage = "El nombre contiene caracteres no permitidos.")]
+
+    public string Nombre { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "El NIT es obligatorio.")]
+    [StringLength(20)]
+
+    public string? Nit { get; set; }
+
+    [Required(ErrorMessage = "El teléfono es obligatorio.")]
+    [StringLength(20)]
+
+    public string? Telefono { get; set; }
+
+    [Required(ErrorMessage = "El correo electrónico es obligatorio.")]
+    [EmailAddress(ErrorMessage = "El correo no es válido.")]
+
+    [StringLength(150)]
+
+    [RegularExpression(@"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$",
+
+        ErrorMessage = "Ingresa un correo electrónico válido.")]
+
+    public string? Correo { get; set; }
+
+    [StringLength(255)]
+
+    public string? Direccion { get; set; }
+
+    [StringLength(100)]
+
+    public string? Contacto { get; set; }
+
+    // VALIDACIONES ADICIONALES
+
+    public IEnumerable<ValidationResult> Validate(
+
+        ValidationContext validationContext)
+
+    {
+
+        if (!string.IsNullOrWhiteSpace(Nombre) &&
+
+            !Nombre.Any(char.IsLetter))
+
+        {
+
+            yield return new ValidationResult(
+
+                "El nombre del proveedor debe contener letras.",
+
+                new[] { nameof(Nombre) });
+
+        }
+
+        if (!string.IsNullOrWhiteSpace(Nit) && !NitValido(Nit))
+
+        {
+
+            yield return new ValidationResult(
+
+                "El NIT guatemalteco no es válido. Revisa el dígito verificador.",
+
+                new[] { nameof(Nit) });
+
+        }
+
+        if (!string.IsNullOrWhiteSpace(Telefono))
+
+        {
+
+            bool valido = Regex.IsMatch(
+
+                Telefono.Trim(),
+
+                @"^(?:\+502[ -]?)?[2-7][0-9]{3}[ -]?[0-9]{4}$");
+
+            if (!valido)
+
+            {
+
+                yield return new ValidationResult(
+
+                    "Ingresa un teléfono válido de Guatemala. Ejemplo: 5555-1234.",
+
+                    new[] { nameof(Telefono) });
+
+            }
+
+        }
+
+        if (!string.IsNullOrWhiteSpace(Contacto))
+
+        {
+
+            string texto = Contacto.Trim();
+
+            if (texto.Length < 2 ||
+
+                !texto.Any(char.IsLetter) ||
+
+                !Regex.IsMatch(texto, @"^[\p{L}\s.'-]+$"))
+
+            {
+
+                yield return new ValidationResult(
+
+                    "El contacto debe ser un nombre válido, sin números.",
+
+                    new[] { nameof(Contacto) });
+
+            }
+
+        }
+
+        if (!string.IsNullOrWhiteSpace(Direccion))
+
+        {
+
+            string texto = Direccion.Trim();
+
+            if (texto.Length < 5 || !texto.Any(char.IsLetter))
+
+            {
+
+                yield return new ValidationResult(
+
+                    "La dirección debe tener al menos 5 caracteres e información descriptiva.",
+
+                    new[] { nameof(Direccion) });
+
+            }
+
+        }
+
+    }
+
+    // VALIDAR DÍGITO VERIFICADOR DEL NIT
+
+    private static bool NitValido(string nit)
+
+    {
+
+        string texto = nit.Trim().ToUpperInvariant();
+
+        // Acepta NIT con guion o sin guion
+
+        var coincidencia = Regex.Match(
+
+            texto,
+
+            @"^([0-9]{2,12})-?([0-9K])$");
+
+        if (!coincidencia.Success)
+
+            return false;
+
+        string numeros = coincidencia.Groups[1].Value;
+
+        char verificador = coincidencia.Groups[2].Value[0];
+
+        int suma = 0;
+
+        for (int i = 0; i < numeros.Length; i++)
+
+        {
+
+            int digito = numeros[i] - '0';
+
+            int peso = numeros.Length - i + 1;
+
+            suma += digito * peso;
+
+        }
+
+        int resultado = 11 - (suma % 11);
+
+        if (resultado == 11)
+
+            resultado = 0;
+
+        char esperado = resultado == 10
+
+            ? 'K'
+
+            : (char)('0' + resultado);
+
+        return verificador == esperado;
+
+    }
+
+}
+
+// ============================================
+
+// CONTROLADOR DE PROVEEDORES
+
+// ============================================
+
+[ApiController]
+
+[Route("api/[controller]")]
+
+[Authorize]
+
+public class ProveedoresController : ControllerBase
+
+{
+
+    private readonly PuntoVentaDbContext _context;
+
+    public ProveedoresController(PuntoVentaDbContext context)
+
+    {
+
+        _context = context;
+
+    }
+
+    // ========================================
+
+    // GET: CONSULTAR TODOS LOS PROVEEDORES
+
+    // ========================================
+
+    [HttpGet]
+
+    [Authorize(Roles = "ADMIN,CONSULTA")]
+
+    public async Task<IActionResult> ObtenerProveedores()
+
+    {
+
+        var proveedores = await _context.Proveedores
+
+            .AsNoTracking()
+
+            .OrderBy(p => p.IdProveedor)
+
+            .Select(p => new
+
+            {
+
+                p.IdProveedor,
+
+                p.Nombre,
+
+                p.Nit,
+
+                p.Telefono,
+
+                p.Correo,
+
+                p.Direccion,
+
+                p.Contacto,
+
+                p.FechaRegistro,
+
+                p.Estado
+
+            })
+
+            .ToListAsync();
+
+        return Ok(proveedores);
+
+    }
+
+    // ========================================
+
+    // GET: CONSULTAR PROVEEDOR POR ID
+
+    // ========================================
+
+    [HttpGet("{id:int}")]
+
+    [Authorize(Roles = "ADMIN,CONSULTA")]
+
+    public async Task<IActionResult> ObtenerProveedorPorId(int id)
+
+    {
+
+        var proveedor = await _context.Proveedores
+
+            .AsNoTracking()
+
+            .Where(p => p.IdProveedor == id)
+
+            .Select(p => new
+
+            {
+
+                p.IdProveedor,
+
+                p.Nombre,
+
+                p.Nit,
+
+                p.Telefono,
+
+                p.Correo,
+
+                p.Direccion,
+
+                p.Contacto,
+
+                p.FechaRegistro,
+
+                p.Estado
+
+            })
+
+            .FirstOrDefaultAsync();
+
+        if (proveedor == null)
+
+        {
+
+            return NotFound(new
+
+            {
+
+                mensaje = "El proveedor no existe."
+
+            });
+
+        }
+
+        return Ok(proveedor);
+
+    }
+
+    // ========================================
+
+    // POST: REGISTRAR PROVEEDOR
+
+    // ========================================
+
+    [HttpPost]
+
+    [Authorize(Roles = "ADMIN")]
+
+    public async Task<IActionResult> RegistrarProveedor(
+
+        [FromBody] GuardarProveedorDto datos)
+
+    {
+
+        string nombre = datos.Nombre.Trim();
+
+        string? nit = NormalizarNit(datos.Nit);
+
+        // EVITAR NOMBRE DUPLICADO
+
+        if (await _context.Proveedores.AnyAsync(
+
+            p => p.Nombre == nombre))
+
+        {
+
+            return Conflict(new
+
+            {
+
+                mensaje = "Ya existe un proveedor con ese nombre."
+
+            });
+
+        }
+
+        // EVITAR NIT DUPLICADO
+
+        if (nit != null && await _context.Proveedores.AnyAsync(
+
+            p => p.Nit == nit))
+
+        {
+
+            return Conflict(new
+
+            {
+
+                mensaje = "Ya existe un proveedor con ese NIT."
+
+            });
+
+        }
+
+        var proveedor = new Proveedore
+
+        {
+
+            Nombre = nombre,
+
+            Nit = nit,
+
+            Telefono = NormalizarTelefono(datos.Telefono),
+
+            Correo = Limpiar(datos.Correo)?.ToLowerInvariant(),
+
+            Direccion = Limpiar(datos.Direccion),
+
+            Contacto = Limpiar(datos.Contacto),
+
+            Estado = true
+
+        };
+
+        _context.Proveedores.Add(proveedor);
+
+        try
+
+        {
+
+            await _context.SaveChangesAsync();
+
+        }
+
+        catch (DbUpdateException ex) when (EsDuplicado(ex))
+
+        {
+
+            return Conflict(new
+
+            {
+
+                mensaje = "Ya existe un proveedor con ese NIT."
+
+            });
+
+        }
+
+        return CreatedAtAction(
+
+            nameof(ObtenerProveedorPorId),
+
+            new { id = proveedor.IdProveedor },
+
+            new
+
+            {
+
+                mensaje = "Proveedor registrado correctamente.",
+
+                proveedor.IdProveedor
+
+            });
+
+    }
+
+    // ========================================
+
+    // PUT: ACTUALIZAR PROVEEDOR
+
+    // ========================================
+
+    [HttpPut("{id:int}")]
+
+    [Authorize(Roles = "ADMIN")]
+
+    public async Task<IActionResult> ActualizarProveedor(
+
+        int id,
+
+        [FromBody] GuardarProveedorDto datos)
+
+    {
+
+        var proveedor = await _context.Proveedores
+
+            .FirstOrDefaultAsync(p => p.IdProveedor == id);
+
+        if (proveedor == null)
+
+        {
+
+            return NotFound(new
+
+            {
+
+                mensaje = "El proveedor no existe."
+
+            });
+
+        }
+
+        string nombre = datos.Nombre.Trim();
+
+        string? nit = NormalizarNit(datos.Nit);
+
+        if (await _context.Proveedores.AnyAsync(
+
+            p => p.Nombre == nombre && p.IdProveedor != id))
+
+        {
+
+            return Conflict(new
+
+            {
+
+                mensaje = "El nombre pertenece a otro proveedor."
+
+            });
+
+        }
+
+        if (nit != null && await _context.Proveedores.AnyAsync(
+
+            p => p.Nit == nit && p.IdProveedor != id))
+
+        {
+
+            return Conflict(new
+
+            {
+
+                mensaje = "El NIT pertenece a otro proveedor."
+
+            });
+
+        }
+
+        proveedor.Nombre = nombre;
+
+        proveedor.Nit = nit;
+
+        proveedor.Telefono = NormalizarTelefono(datos.Telefono);
+
+        proveedor.Correo = Limpiar(datos.Correo)?.ToLowerInvariant();
+
+        proveedor.Direccion = Limpiar(datos.Direccion);
+
+        proveedor.Contacto = Limpiar(datos.Contacto);
+
+        try
+
+        {
+
+            await _context.SaveChangesAsync();
+
+        }
+
+        catch (DbUpdateException ex) when (EsDuplicado(ex))
+
+        {
+
+            return Conflict(new
+
+            {
+
+                mensaje = "El NIT ya pertenece a otro proveedor."
+
+            });
+
+        }
+
+        return Ok(new
+
+        {
+
+            mensaje = "Proveedor actualizado correctamente.",
+
+            proveedor.IdProveedor
+
+        });
+
+    }
+
+    // ========================================
+
+    // DELETE: DESACTIVAR PROVEEDOR
+
+    // ========================================
+
+    [HttpDelete("{id:int}")]
+
+    [Authorize(Roles = "ADMIN")]
+
+    public async Task<IActionResult> DesactivarProveedor(int id)
+
+    {
+
+        var proveedor = await _context.Proveedores
+
+            .FirstOrDefaultAsync(p => p.IdProveedor == id);
+
+        if (proveedor == null)
+
+        {
+
+            return NotFound(new
+
+            {
+
+                mensaje = "El proveedor no existe."
+
+            });
+
+        }
+
+        if (proveedor.Estado != true)
+
+        {
+
+            return BadRequest(new
+
+            {
+
+                mensaje = "El proveedor ya está inactivo."
+
+            });
+
+        }
+
+        // No se elimina físicamente ni afecta compras anteriores
+
+        proveedor.Estado = false;
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new
+
+        {
+
+            mensaje = "Proveedor desactivado correctamente.",
+
+            proveedor.IdProveedor,
+
+            proveedor.Estado
+
+        });
+
+    }
+
+    // ========================================
+
+    // PUT: ACTIVAR PROVEEDOR
+
+    // ========================================
+
+    [HttpPut("{id:int}/activar")]
+
+    [Authorize(Roles = "ADMIN")]
+
+    public async Task<IActionResult> ActivarProveedor(int id)
+
+    {
+
+        var proveedor = await _context.Proveedores
+
+            .FirstOrDefaultAsync(p => p.IdProveedor == id);
+
+        if (proveedor == null)
+
+        {
+
+            return NotFound(new
+
+            {
+
+                mensaje = "El proveedor no existe."
+
+            });
+
+        }
+
+        if (proveedor.Estado == true)
+
+        {
+
+            return BadRequest(new
+
+            {
+
+                mensaje = "El proveedor ya está activo."
+
+            });
+
+        }
+
+        proveedor.Estado = true;
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new
+
+        {
+
+            mensaje = "Proveedor activado correctamente.",
+
+            proveedor.IdProveedor,
+
+            proveedor.Estado
+
+        });
+
+    }
+
+    // ========================================
+
+    // FUNCIONES AUXILIARES
+
+    // ========================================
+
+    private static string? Limpiar(string? valor)
+
+    {
+
+        return string.IsNullOrWhiteSpace(valor)
+
+            ? null
+
+            : valor.Trim();
+
+    }
+
+    private static string? NormalizarNit(string? valor)
+
+    {
+
+        if (string.IsNullOrWhiteSpace(valor))
+
+            return null;
+
+        string texto = valor.Trim().ToUpperInvariant();
+
+        var coincidencia = Regex.Match(
+
+            texto,
+
+            @"^([0-9]{2,12})-?([0-9K])$");
+
+        if (!coincidencia.Success)
+
+            return texto;
+
+        return coincidencia.Groups[1].Value +
+
+               "-" + coincidencia.Groups[2].Value;
+
+    }
+
+    private static string? NormalizarTelefono(string? valor)
+
+    {
+
+        if (string.IsNullOrWhiteSpace(valor))
+
+            return null;
+
+        string numeros = Regex.Replace(
+
+            valor.Trim(), @"[\s-]", "");
+
+        if (numeros.StartsWith("+502"))
+
+            numeros = numeros.Substring(4);
+
+        if (numeros.Length == 8)
+
+            return numeros.Insert(4, "-");
+
+        return valor.Trim();
+
+    }
+
+    private static bool EsDuplicado(DbUpdateException ex)
+
+    {
+
+        return ex.InnerException is MySqlException mysql &&
+
+               mysql.Number == 1062;
+
+    }
+
+}

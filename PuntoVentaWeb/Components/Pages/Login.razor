@@ -1,0 +1,670 @@
+@page "/login"
+@rendermode InteractiveServer
+@layout PuntoVentaWeb.Components.Layout.LoginLayout
+
+@using System.ComponentModel.DataAnnotations
+@using System.Net
+@using System.Net.Http.Json
+@using System.Text.Json
+@using PuntoVentaWeb.Servicios
+
+@inject HttpClient Http
+@inject SesionUsuario Sesion
+@inject NavigationManager Navegacion
+
+<PageTitle>Iniciar sesión - Punto de Venta</PageTitle>
+
+<div class="min-vh-100 d-flex align-items-center justify-content-center"
+     style="background:linear-gradient(135deg,#081b42,#1755b5);padding:30px 15px;">
+
+    <div class="card border-0 shadow-lg"
+         style="width:100%;max-width:940px;border-radius:20px;overflow:hidden;">
+
+        <div class="row g-0">
+
+            <!-- ================================= -->
+            <!-- PRESENTACIÓN AZUL                 -->
+            <!-- ================================= -->
+            <div class="col-lg-5 d-flex align-items-center text-white"
+                 style="background:linear-gradient(160deg,#0b285b,#1658c5);">
+
+                <div class="p-5 w-100">
+
+                    <div class="mb-4">
+                        <div class="d-inline-flex align-items-center justify-content-center"
+                             style="width:72px;height:72px;border:1px solid #ffffff55;border-radius:20px;background:#ffffff20;font-size:34px;">
+                            🛒
+                        </div>
+                    </div>
+
+                    <h1 class="fw-bold mb-3"
+                        style="font-size:32px;">
+                        Sistema Punto de Venta
+                    </h1>
+
+                    <p class="mb-4"
+                       style="color:#dbeafe;font-size:16px;">
+                        Administra tus productos, compras,
+                        ventas e inventario desde un solo lugar.
+                    </p>
+
+                    <div class="border-top pt-4"
+                         style="border-color:#ffffff45!important;">
+
+                        <div class="d-flex align-items-center gap-2 mb-3">
+                            <span>✓</span>
+                            <span>Gestión de inventario</span>
+                        </div>
+
+                        <div class="d-flex align-items-center gap-2 mb-3">
+                            <span>✓</span>
+                            <span>Comprobantes de venta</span>
+                        </div>
+
+                        <div class="d-flex align-items-center gap-2">
+                            <span>✓</span>
+                            <span>Reportes y consultas</span>
+                        </div>
+
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- ================================= -->
+            <!-- FORMULARIO BLANCO                 -->
+            <!-- ================================= -->
+            <div class="col-lg-7">
+
+                <div class="p-4 p-md-5">
+
+                    @if (requiereCambioContrasena)
+                    {
+                        <!-- ================================= -->
+                        <!-- CAMBIO OBLIGATORIO DE CONTRASEÑA -->
+                        <!-- ================================= -->
+
+                        <div class="text-center mb-4">
+
+                            <div class="text-primary fw-semibold mb-2">
+                                SEGURIDAD DE LA CUENTA
+                            </div>
+
+                            <h2 class="fw-bold mb-2">
+                                Cambiar contraseña
+                            </h2>
+
+                            <p class="text-muted">
+                                Es tu primer ingreso o tu contraseña
+                                fue restablecida. Establecé una contraseña
+                                personal para continuar.
+                            </p>
+
+                        </div>
+
+                        <div class="alert alert-info">
+                            <strong>Usuario:</strong>
+                            @usuarioPendiente
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(error))
+                        {
+                            <div class="alert alert-danger"
+                                 role="alert">
+                                @error
+                            </div>
+                        }
+
+                        <EditForm Model="@formularioCambio"
+                                  @key="formularioCambio"
+                                  OnValidSubmit="CambiarContrasenaInicial"
+                                  FormName="cambioClaveInicialForm">
+
+                            <DataAnnotationsValidator />
+
+                            <!-- NUEVA CONTRASEÑA -->
+                            <div class="mb-4">
+
+                                <label class="form-label fw-semibold">
+                                    Nueva contraseña
+                                </label>
+
+                                <InputText type="password"
+                                           class="form-control form-control-lg"
+                                           autocomplete="new-password"
+                                           placeholder="Ingresá tu nueva contraseña"
+                                           @bind-Value="formularioCambio.NuevaContrasena" />
+
+                                <ValidationMessage
+                                    For="@(() => formularioCambio.NuevaContrasena)"
+                                    class="text-danger small" />
+
+                            </div>
+
+                            <!-- CONFIRMAR CONTRASEÑA -->
+                            <div class="mb-4">
+
+                                <label class="form-label fw-semibold">
+                                    Confirmar contraseña
+                                </label>
+
+                                <InputText type="password"
+                                           class="form-control form-control-lg"
+                                           autocomplete="new-password"
+                                           placeholder="Confirmá tu nueva contraseña"
+                                           @bind-Value="formularioCambio.ConfirmarContrasena" />
+
+                                <ValidationMessage
+                                    For="@(() => formularioCambio.ConfirmarContrasena)"
+                                    class="text-danger small" />
+
+                            </div>
+
+                            <div class="alert alert-light border small">
+                                La contraseña debe contener entre
+                                12 y 128 caracteres, incluyendo
+                                mayúsculas, minúsculas, números
+                                y un símbolo.
+                            </div>
+
+                            <!-- GUARDAR CONTRASEÑA -->
+                            <button type="submit"
+                                    class="btn btn-primary btn-lg w-100 fw-semibold"
+                                    disabled="@procesando"
+                                    style="padding:14px;border-radius:10px;">
+
+                                @if (procesando)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-2"
+                                          aria-hidden="true">
+                                    </span>
+
+                                    <span>Guardando...</span>
+                                }
+                                else
+                                {
+                                    <span>Guardar nueva contraseña</span>
+                                }
+
+                            </button>
+
+                        </EditForm>
+
+                        <button type="button"
+                                class="btn btn-link w-100 mt-3"
+                                disabled="@procesando"
+                                @onclick="CancelarCambio">
+
+                            Volver al inicio de sesión
+
+                        </button>
+                    }
+                    else
+                    {
+                        <!-- ================================= -->
+                        <!-- INICIO DE SESIÓN NORMAL          -->
+                        <!-- ================================= -->
+
+                        <div class="text-center mb-4">
+
+                            <div class="text-primary fw-semibold mb-2">
+                                BIENVENIDO
+                            </div>
+
+                            <h2 class="fw-bold mb-2">
+                                Iniciar sesión
+                            </h2>
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(mensaje))
+                        {
+                            <div class="alert alert-success"
+                                 role="status">
+                                @mensaje
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(error))
+                        {
+                            <div class="alert alert-danger"
+                                 role="alert">
+                                @error
+                            </div>
+                        }
+
+                        <EditForm Model="@formulario"
+                                  @key="formulario"
+                                  OnValidSubmit="Entrar"
+                                  FormName="loginForm">
+
+                            <DataAnnotationsValidator />
+
+                            <!-- USUARIO -->
+                            <div class="mb-4">
+
+                                <label for="usuario"
+                                       class="form-label fw-semibold">
+                                    Correo o usuario
+                                </label>
+
+                                <InputText id="usuario"
+                                           class="form-control form-control-lg"
+                                           autocomplete="username"
+                                           maxlength="150"
+                                           @bind-Value="formulario.Usuario" />
+
+                                <ValidationMessage
+                                    For="@(() => formulario.Usuario)"
+                                    class="text-danger small" />
+
+                            </div>
+
+                            <!-- CONTRASEÑA -->
+                            <div class="mb-4">
+
+                                <label for="contrasena"
+                                       class="form-label fw-semibold">
+                                    Contraseña
+                                </label>
+
+                                <InputText id="contrasena"
+                                           type="password"
+                                           class="form-control form-control-lg"
+                                           autocomplete="current-password"
+                                           @bind-Value="formulario.Contrasena" />
+
+                                <ValidationMessage
+                                    For="@(() => formulario.Contrasena)"
+                                    class="text-danger small" />
+
+                            </div>
+
+                            <!-- INGRESAR -->
+                            <button type="submit"
+                                    class="btn btn-primary btn-lg w-100 fw-semibold"
+                                    disabled="@procesando"
+                                    style="padding:14px;border-radius:10px;">
+
+                                @if (procesando)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-2"
+                                          aria-hidden="true">
+                                    </span>
+
+                                    <span>Verificando...</span>
+                                }
+                                else
+                                {
+                                    <span>Ingresar al Sistema →</span>
+                                }
+
+                            </button>
+
+                        </EditForm>
+                    }
+
+                    <div class="text-center mt-4">
+                    </div>
+
+                    <div class="text-center mt-4 pt-3 border-top">
+                    </div>
+
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+@code {
+
+    // ========================================
+    // FORMULARIO DE INICIO DE SESIÓN
+    // ========================================
+    public class FormularioLogin
+    {
+        [Required(
+            ErrorMessage = "Ingresa tu correo empresarial o usuario.")]
+        [StringLength(150)]
+        public string Usuario { get; set; } = "";
+
+        [Required(
+            ErrorMessage = "Ingresa tu contraseña.")]
+        public string Contrasena { get; set; } = "";
+    }
+
+    // ========================================
+    // FORMULARIO DE CAMBIO INICIAL
+    // ========================================
+    public class FormularioCambioInicial : IValidatableObject
+    {
+        [Required(
+            ErrorMessage = "Ingresá una nueva contraseña.")]
+        public string NuevaContrasena { get; set; } = "";
+
+        [Required(
+            ErrorMessage = "Confirmá tu nueva contraseña.")]
+        [Compare(nameof(NuevaContrasena),
+            ErrorMessage = "Las contraseñas no coinciden.")]
+        public string ConfirmarContrasena { get; set; } = "";
+
+        public IEnumerable<ValidationResult> Validate(
+            ValidationContext context)
+        {
+            string clave = NuevaContrasena;
+
+            if (string.IsNullOrWhiteSpace(clave) ||
+                clave.Length < 12 ||
+                clave.Length > 128)
+            {
+                yield return new ValidationResult(
+                    "La contraseña debe tener entre 12 y 128 caracteres.",
+                    new[] { nameof(NuevaContrasena) });
+
+                yield break;
+            }
+
+            if (!clave.Any(char.IsUpper) ||
+                !clave.Any(char.IsLower) ||
+                !clave.Any(char.IsDigit) ||
+                !clave.Any(c =>
+                    char.IsPunctuation(c) || char.IsSymbol(c)))
+            {
+                yield return new ValidationResult(
+                    "Agregá mayúsculas, minúsculas, números y un símbolo.",
+                    new[] { nameof(NuevaContrasena) });
+            }
+        }
+    }
+
+    // ========================================
+    // RESPUESTA DE LA API
+    // ========================================
+    public class RespuestaLogin
+    {
+        public bool RequiereCambioContrasena { get; set; }
+
+        public string Token { get; set; } = "";
+        public DateTime ExpiracionUtc { get; set; }
+        public int IdUsuario { get; set; }
+        public int IdEmpleado { get; set; }
+
+        public string Usuario { get; set; } = "";
+        public string NombreCompleto { get; set; } = "";
+        public string Rol { get; set; } = "";
+    }
+
+    // ========================================
+    // VARIABLES
+    // ========================================
+    private FormularioLogin formulario = new();
+    private FormularioCambioInicial formularioCambio = new();
+
+    private bool procesando;
+    private bool requiereCambioContrasena;
+
+    private string usuarioPendiente = "";
+    private string contrasenaTemporal = "";
+
+    private string? error;
+    private string? mensaje;
+
+    // ========================================
+    // REDIRECCIÓN SI EXISTE SESIÓN
+    // ========================================
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && Sesion.EstaAutenticado)
+        {
+            Navegacion.NavigateTo("/", replace: true);
+        }
+    }
+
+    // ========================================
+    // INICIAR SESIÓN
+    // ========================================
+    private async Task Entrar()
+    {
+        if (procesando)
+            return;
+
+        procesando = true;
+        error = null;
+        mensaje = null;
+
+        try
+        {
+            var datos = new
+            {
+                usuario = formulario.Usuario.Trim(),
+                contrasena = formulario.Contrasena
+            };
+
+            using var respuesta = await Http.PostAsJsonAsync(
+                "api/Auth/login",
+                datos);
+
+            if (respuesta.StatusCode ==
+                HttpStatusCode.Unauthorized)
+            {
+                error = "Usuario o contraseña incorrectos.";
+                return;
+            }
+
+            if (!respuesta.IsSuccessStatusCode)
+            {
+                error = await LeerError(respuesta);
+                return;
+            }
+
+            var resultado = await respuesta.Content
+                .ReadFromJsonAsync<RespuestaLogin>();
+
+            if (resultado == null)
+            {
+                error = "La API no devolvió una respuesta válida.";
+                return;
+            }
+
+            // ====================================
+            // CONTRASEÑA TEMPORAL DETECTADA
+            // ====================================
+            if (resultado.RequiereCambioContrasena)
+            {
+                usuarioPendiente = formulario.Usuario.Trim();
+
+                // Se conserva temporalmente para
+                // verificarla otra vez al cambiarla.
+                contrasenaTemporal = formulario.Contrasena;
+
+                formulario.Contrasena = "";
+
+                formularioCambio = new FormularioCambioInicial();
+
+                requiereCambioContrasena = true;
+
+                error = null;
+                mensaje = null;
+
+                // No se guarda sesión ni se entra al sistema.
+                return;
+            }
+
+            // ====================================
+            // VALIDAR SESIÓN NORMAL
+            // ====================================
+            if (string.IsNullOrWhiteSpace(resultado.Token) ||
+                resultado.ExpiracionUtc <= DateTime.UtcNow)
+            {
+                error = "La API no devolvió una sesión válida.";
+                return;
+            }
+
+            // ====================================
+            // GUARDAR SESIÓN PROTEGIDA
+            // ====================================
+            await Sesion.IniciarAsync(new DatosSesion
+            {
+                Token = resultado.Token,
+                Usuario = resultado.Usuario,
+                NombreCompleto = resultado.NombreCompleto,
+                Rol = resultado.Rol,
+                IdUsuario = resultado.IdUsuario,
+                IdEmpleado = resultado.IdEmpleado,
+                ExpiracionUtc = resultado.ExpiracionUtc
+            });
+
+            formulario.Contrasena = "";
+
+            // ====================================
+            // ENTRAR AL SISTEMA
+            // ====================================
+            Navegacion.NavigateTo("/", replace: true);
+        }
+        catch (Exception)
+        {
+            error = "No se pudo iniciar sesión. Verifica que la API esté funcionando e intenta nuevamente.";
+        }
+        finally
+        {
+            procesando = false;
+        }
+    }
+
+    // ========================================
+    // CAMBIAR CONTRASEÑA TEMPORAL
+    // ========================================
+    private async Task CambiarContrasenaInicial()
+    {
+        if (procesando || !requiereCambioContrasena)
+            return;
+
+        procesando = true;
+        error = null;
+
+        try
+        {
+            var datos = new
+            {
+                usuario = usuarioPendiente,
+                contrasenaTemporal = contrasenaTemporal,
+                nuevaContrasena = formularioCambio.NuevaContrasena,
+                confirmarContrasena = formularioCambio.ConfirmarContrasena
+            };
+
+            using var respuesta = await Http.PostAsJsonAsync(
+                "api/Auth/cambiar-contrasena-inicial",
+                datos);
+
+            if (!respuesta.IsSuccessStatusCode)
+            {
+                error = await LeerError(respuesta);
+                return;
+            }
+
+            // Conservar únicamente el usuario
+            // para facilitar el siguiente ingreso.
+            string usuarioActual = usuarioPendiente;
+
+            // Limpiar contraseñas de los formularios.
+            contrasenaTemporal = "";
+            usuarioPendiente = "";
+
+            formularioCambio = new FormularioCambioInicial();
+
+            formulario = new FormularioLogin
+            {
+                Usuario = usuarioActual
+            };
+
+            requiereCambioContrasena = false;
+
+            mensaje = "Tu contraseña personal se guardó correctamente. Ahora iniciá sesión con tu nueva contraseña.";
+
+            error = null;
+        }
+        catch (Exception)
+        {
+            error = "No se pudo cambiar la contraseña. Verifica la conexión e intenta nuevamente.";
+        }
+        finally
+        {
+            procesando = false;
+        }
+    }
+
+    // ========================================
+    // CANCELAR CAMBIO DE CONTRASEÑA
+    // ========================================
+    private void CancelarCambio()
+    {
+        if (procesando)
+            return;
+
+        string usuarioActual = usuarioPendiente;
+
+        // Borrar los datos temporales.
+        contrasenaTemporal = "";
+        usuarioPendiente = "";
+
+        formularioCambio = new FormularioCambioInicial();
+
+        formulario = new FormularioLogin
+        {
+            Usuario = usuarioActual
+        };
+
+        requiereCambioContrasena = false;
+
+        error = null;
+        mensaje = null;
+    }
+
+    // ========================================
+    // MENSAJES DE ERROR DE LA API
+    // ========================================
+    private static async Task<string> LeerError(
+        HttpResponseMessage respuesta)
+    {
+        try
+        {
+            using var documento = JsonDocument.Parse(
+                await respuesta.Content.ReadAsStringAsync());
+
+            if (documento.RootElement.TryGetProperty(
+                "mensaje",
+                out var mensajeApi))
+            {
+                return mensajeApi.GetString()
+                    ?? "No se pudo completar la operación.";
+            }
+
+            if (documento.RootElement.TryGetProperty(
+                "errors",
+                out var errores) &&
+                errores.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var campo in errores.EnumerateObject())
+                {
+                    if (campo.Value.ValueKind != JsonValueKind.Array)
+                        continue;
+
+                    foreach (var detalle in campo.Value.EnumerateArray())
+                    {
+                        if (detalle.ValueKind == JsonValueKind.String)
+                        {
+                            return detalle.GetString()
+                                ?? "Los datos ingresados no son válidos.";
+                        }
+                    }
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // La respuesta no contiene JSON válido.
+        }
+
+        return $"No se pudo completar la operación. Error HTTP {(int)respuesta.StatusCode}.";
+    }
+}
